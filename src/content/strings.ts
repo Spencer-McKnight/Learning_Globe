@@ -11,12 +11,21 @@ export const STR = {
 
   menu: {
     play: "Play",
+    playContext: (region: string, n: number) => `${region} · ${n} countries`,
     explore: "Explore the map",
     passport: "Passport",
     leaderboard: "High scores",
     settings: "Settings",
     regionLabel: "Where do you want to play?",
-    roundsLabel: (n: number) => `${n} countries per round`,
+    startAria: "Start a game",
+    worldAll: (n: number) => `All ${n} countries`,
+    count: (n: number) => n.toLocaleString(),
+    regionTile: (name: string, n: number) => `${name}, ${n} countries`,
+    journeyPassport: (found: number, total: number) => `${found} / ${total}`,
+    journeyPassportLabel: (found: number, total: number) =>
+      `Passport: ${found} of ${total} countries discovered`,
+    journeyBestLabel: (score: string) =>
+      `High scores: personal best ${score} points`,
   },
 
   regions: {
@@ -35,11 +44,12 @@ export const STR = {
     find: "Find",
     progress: (i: number, n: number) => `${i} of ${n}`,
     score: "Score",
+    streak: "Streak",
     streakChip: (mult: number) => `streak ×${mult.toLocaleString()}`,
     hint: "Hint",
     skip: "Skip",
     pause: "Pause",
-    quit: "Leave round",
+    quit: "Leave",
     resume: "Keep playing",
     zoomIn: "Zoom in",
     zoomOut: "Zoom out",
@@ -47,17 +57,18 @@ export const STR = {
     correct: ["Nailed it!", "Spot on!", "You got it!", "Brilliant!", "Cartographer!"],
     bullseye: "Bullseye!",
     discovery: "New discovery!",
-    miss: (km: string, dir: string) => `${km} away — look ${dir}`,
+    miss: (km: string) => `${km} away`,
     missWarm: "So close!",
     reveal: (name: string) => `It was ${name}`,
-    revealSub: "Watch the glowing country — you'll know it next time.",
+    revealSub: "Drag the map to look around — that pauses the timer.",
+    next: "Next",
     accuracy: (pct: number) => `${pct}% to the heart`,
     speedFast: "Lightning fast",
     speedQuick: "Quick!",
     hintContinent: (c: string) => `It's in ${c}`,
     hintCapitalFlag: (flag: string, cap: string) =>
       cap ? `${flag} Its capital is ${cap}` : `Its flag is ${flag}`,
-    hintFlash: "Watch the map closely…",
+    hintPopulation: (p: string) => `About ${p} people live there`,
     hintCost: "Hints trim your points a little.",
     noHintsLeft: "No hints left for this one",
     skipped: (name: string) => `That was ${name}`,
@@ -138,7 +149,12 @@ export const STR = {
     replayTutorial: "Show the tour again",
     keyboardTitle: "Keyboard controls",
     keyboardHelp:
-      "Arrow keys move the map · + and − zoom · Enter drops your pin at the crosshair · H uses a hint · Esc pauses",
+      "Hold arrow keys to glide · hold + / − to zoom smoothly · Enter drops your pin at the crosshair · H uses a hint · Esc pauses",
+    applyTitle: "Apply settings?",
+    applyBody:
+      "Some of these change how this round works. Restart now with the new rules, or keep this round as-is and use them next time.",
+    applyRestart: "Restart match",
+    applyNext: "Apply next match",
   },
 
   tutorial: {
@@ -180,7 +196,7 @@ export const STR = {
     announceCorrect: (name: string, points: string, streak: number) =>
       `Correct! That was ${name}. You earned ${points} points. Streak is ${streak}.`,
     announceMiss: (km: string, dir: string, left: number) =>
-      `Not quite. Your pin is ${km} from the target. Try ${dir}. ${left} ${
+      `Not quite. Your pin is ${km} from the target. The glow ring points ${dir}. ${left} ${
         left === 1 ? "try" : "tries"
       } left.`,
     announceReveal: (name: string) => `Out of tries. The country was ${name}.`,
@@ -193,6 +209,7 @@ export const STR = {
 
   pause: {
     title: "Paused",
+    restart: "Restart",
   },
 
   loading: "Charting the oceans…",

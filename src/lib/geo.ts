@@ -107,10 +107,23 @@ export function proximity(c: Country, p: LonLat): number {
   return Math.max(0, Math.min(1, 1 - geoDistance(c.centroid, p) / c.radius));
 }
 
-const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] as const;
+export const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] as const;
+export type CompassKey = (typeof COMPASS)[number];
+
+/** Degrees clockwise from geographic north for each 8-wind key. */
+export const COMPASS_BEARING: Record<CompassKey, number> = {
+  N: 0,
+  NE: 45,
+  E: 90,
+  SE: 135,
+  S: 180,
+  SW: 225,
+  W: 270,
+  NW: 315,
+};
 
 /** Initial great-circle bearing from a to b, as an 8-wind compass key. */
-export function compassDirection(a: LonLat, b: LonLat): (typeof COMPASS)[number] {
+export function compassDirection(a: LonLat, b: LonLat): CompassKey {
   const toRad = Math.PI / 180;
   const [λ1, φ1] = [a[0] * toRad, a[1] * toRad];
   const [λ2, φ2] = [b[0] * toRad, b[1] * toRad];
@@ -119,6 +132,23 @@ export function compassDirection(a: LonLat, b: LonLat): (typeof COMPASS)[number]
   const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(dλ);
   const deg = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
   return COMPASS[Math.round(deg / 45) % 8];
+}
+
+/** Point roughly `deg` degrees along a great-circle bearing from `from`. */
+export function destinationPoint(from: LonLat, bearingDeg: number, deg = 2): LonLat {
+  const toRad = Math.PI / 180;
+  const δ = deg * toRad;
+  const θ = bearingDeg * toRad;
+  const φ1 = from[1] * toRad;
+  const λ1 = from[0] * toRad;
+  const sinφ1 = Math.sin(φ1);
+  const cosφ1 = Math.cos(φ1);
+  const sinδ = Math.sin(δ);
+  const cosδ = Math.cos(δ);
+  const φ2 = Math.asin(sinφ1 * cosδ + cosφ1 * sinδ * Math.cos(θ));
+  const λ2 =
+    λ1 + Math.atan2(Math.sin(θ) * sinδ * cosφ1, cosδ - sinφ1 * Math.sin(φ2));
+  return [((λ2 / toRad + 540) % 360) - 180, φ2 / toRad];
 }
 
 export function formatKm(km: number): string {
@@ -151,6 +181,21 @@ export const REGIONS: Region[] = [
   "South America",
   "Oceania",
 ];
+
+/**
+ * Ambient-globe camera targets for the menu's region picker — hand-tuned
+ * centers that frame each continent pleasantly under the orthographic view.
+ * World matches MapEngine.resetView's default framing.
+ */
+export const REGION_FOCUS: Record<Region, LonLat> = {
+  World: [12, 18],
+  Africa: [17, 3],
+  Asia: [88, 34],
+  Europe: [14, 51],
+  "North America": [-97, 43],
+  "South America": [-59, -16],
+  Oceania: [141, -26],
+};
 
 export function regionPool(world: World, region: Region): Country[] {
   if (region === "World") return world.quizable;

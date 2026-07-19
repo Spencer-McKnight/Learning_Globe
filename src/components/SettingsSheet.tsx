@@ -42,16 +42,24 @@ function Seg<T extends string | number>({
   value,
   options,
   onChange,
+  columns,
 }: {
   label: string;
   value: T;
   options: { v: T; label: string }[];
   onChange: (v: T) => void;
+  /** Equal-width CSS grid; stacks the label above so long options breathe on mobile. */
+  columns?: 2;
 }): JSX.Element {
+  const stacked = columns != null;
   return (
-    <div className="set-row">
+    <div className={stacked ? "set-row set-row--stack" : "set-row"}>
       <span className="set-label">{label}</span>
-      <div className="seg" role="group" aria-label={label}>
+      <div
+        className={stacked ? `seg seg--grid seg--cols-${columns}` : "seg"}
+        role="group"
+        aria-label={label}
+      >
         {options.map((o) => (
           <button
             key={String(o.v)}
@@ -84,6 +92,7 @@ export function SettingsSheet({
           options={(["globe", "naturalEarth", "equalEarth", "mercator"] as ProjectionId[]).map(
             (v) => ({ v, label: S.projections[v] })
           )}
+          columns={2}
           onChange={(projection) => onChange({ projection })}
         />
         <Toggle

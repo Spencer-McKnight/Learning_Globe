@@ -29,13 +29,12 @@ export interface MapPalette {
   reveal: string;
   discovery: string;
   crosshair: string;
-  pinStroke: string;
 }
 
 export const MAP_PALETTE: MapPalette = {
   ocean: COLORS.ink,
   oceanCenter: "#111c3d",
-  atmosphere: "rgba(111, 255, 233, 0.28)",
+  atmosphere: "rgba(111, 255, 233, 0.14)",
   land: "#2d4160",
   landBorder: "#0b132b",
   landHover: "#46608a",
@@ -46,7 +45,6 @@ export const MAP_PALETTE: MapPalette = {
   reveal: COLORS.surf,
   discovery: COLORS.gold,
   crosshair: COLORS.glow,
-  pinStroke: COLORS.ink,
 };
 
 export const MAP_PALETTE_HIGH_CONTRAST: MapPalette = {
@@ -59,4 +57,27 @@ export const MAP_PALETTE_HIGH_CONTRAST: MapPalette = {
   graticule: "rgba(238, 246, 246, 0.25)",
 };
 
+/** Milestone / generic celebration — mixed ocean + sand. */
 export const CONFETTI_COLORS = [COLORS.glow, COLORS.surf, COLORS.gold, COLORS.foam];
+
+/** First-ever stamp — sand-gold fanfare with a hint of seafoam. */
+export const DISCOVERY_CONFETTI = [
+  COLORS.gold,
+  "#ffe8a8",
+  "#ffc857",
+  COLORS.foam,
+  COLORS.glow,
+];
+
+/** Ordinary correct pin — ocean greens/blues/seafoam, no gold. */
+export const CORRECT_CONFETTI = [
+  COLORS.glow,
+  COLORS.surf,
+  "#a8fff5",
+  "#3dd6c3",
+  "#7ee0a8", // soft lagoon green
+  "#4fc3a0", // deeper sea-green
+  "#7ec8ff", // clear-water blue
+  "#4a9fd8", // mid ocean blue
+  COLORS.foam,
+];

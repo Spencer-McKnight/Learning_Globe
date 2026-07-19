@@ -43,6 +43,7 @@ Future Development Intentions (Not yet a constraint):
 - Ability to show topographical heights to teach mountains, etc, with a scale that is visible on a zoomed-out world view.
 - Dynamic, cached multi-language support.
 - Country and a State or Province mode, or All.
+- Map pins that evolve the more you get right into shinier, artistic or stylised, caracatures
 
 Other Driving Considerations:
 

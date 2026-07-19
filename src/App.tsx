@@ -17,9 +17,11 @@ import {
   compassDirection,
   distanceKm,
   formatKm,
+  formatPopulation,
   hitTest,
   loadWorld,
   proximity,
+  REGION_FOCUS,
   regionPool,
   type Country,
   type LonLat,
@@ -40,20 +42,60 @@ import {
   type LeaderboardEntry,
   type Settings,
 } from "./lib/storage";
+import type { ArrowDir, ZoomDir } from "./map/InteractionController";
 import type { MapEngine } from "./map/MapEngine";
 
 type ScreenId = "menu" | "game" | "results" | "explore";
 type OverlayId = null | "settings" | "passport" | "leaderboard";
 
+const ARROW_KEYS: Record<string, ArrowDir> = {
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  ArrowUp: "up",
+  ArrowDown: "down",
+};
+
+const ZOOM_KEYS: Record<string, ZoomDir> = {
+  "+": "in",
+  "=": "in",
+  "-": "out",
+  _: "out",
+};
+
+/** Settings that reshape the current match if changed mid-round. */
+type MatchRules = Pick<
+  Settings,
+  "region" | "roundLength" | "attempts" | "hintsEnabled" | "speedBonus"
+>;
+
+const pickMatchRules = (s: Settings): MatchRules => ({
+  region: s.region,
+  roundLength: s.roundLength,
+  attempts: s.attempts,
+  hintsEnabled: s.hintsEnabled,
+  speedBonus: s.speedBonus,
+});
+
+const matchRulesEqual = (a: MatchRules, b: MatchRules): boolean =>
+  a.region === b.region &&
+  a.roundLength === b.roundLength &&
+  a.attempts === b.attempts &&
+  a.hintsEnabled === b.hintsEnabled &&
+  a.speedBonus === b.speedBonus;
+
 const FEEDBACK_MS = 1900;
 const REVEAL_MS = 3000;
+/** Persistent glow while the player studies the revealed country. */
+const REVEAL_FLASH_MS = Number.POSITIVE_INFINITY;
 
 export default function App(): JSX.Element {
   const [world, setWorld] = useState<World | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [settings, setSettings] = useState<Settings>(loadSettings);
+  const [runRules, setRunRules] = useState<MatchRules>(() => pickMatchRules(loadSettings()));
   const [screen, setScreen] = useState<ScreenId>("menu");
   const [overlay, setOverlay] = useState<OverlayId>(null);
+  const [settingsApplyPrompt, setSettingsApplyPrompt] = useState(false);
   const [paused, setPaused] = useState(false);
   const [tutorialActive, setTutorialActive] = useState(false);
   const [passport, setPassport] = useState(loadPassport);
@@ -71,8 +113,12 @@ export default function App(): JSX.Element {
 
   const engineRef = useRef<MapEngine | null>(null);
   const advanceTimer = useRef<number | null>(null);
+  const revealRaf = useRef<number | null>(null);
+  const revealCounting = useRef(false);
   const pendingPlay = useRef(false);
   const recorded = useRef(true);
+  /** 1 → 0 while the reveal auto-advance countdown is running; null when paused/idle. */
+  const [revealRemain, setRevealRemain] = useState<number | null>(null);
 
   const reduceMotion =
     settings.reduceMotion === "on" || (settings.reduceMotion === "auto" && osReducedMotion);
@@ -103,7 +149,8 @@ export default function App(): JSX.Element {
 
   // ---------------- engine mode sync ----------------
 
-  const interactive = (screen === "game" && !paused) || screen === "explore";
+  const interactive =
+    (screen === "game" && !paused && !overlay && !settingsApplyPrompt) || screen === "explore";
   const ambient = screen === "menu" || screen === "results";
 
   useEffect(() => {
@@ -122,10 +169,20 @@ export default function App(): JSX.Element {
   }, [keyboardNav, screen]);
 
   useEffect(() => {
-    const cancel = (): void => setKeyboardNav(false);
+    const cancel = (): void => {
+      setKeyboardNav(false);
+      engineRef.current?.clearNavKeys();
+    };
     window.addEventListener("pointerdown", cancel);
     return () => window.removeEventListener("pointerdown", cancel);
   }, []);
+
+  // Stop keyboard glide when play is interrupted.
+  useEffect(() => {
+    if (overlay || settingsApplyPrompt || tutorialActive || paused || !interactive) {
+      engineRef.current?.clearNavKeys();
+    }
+  }, [overlay, settingsApplyPrompt, tutorialActive, paused, interactive]);
 
   // ---------------- game flow ----------------
 
@@ -139,8 +196,28 @@ export default function App(): JSX.Element {
     }
   };
 
-  const advance = (): void => {
+  const clearRevealAnim = (): void => {
+    if (revealRaf.current !== null) {
+      cancelAnimationFrame(revealRaf.current);
+      revealRaf.current = null;
+    }
+  };
+
+  const stopRevealCountdown = (): void => {
+    revealCounting.current = false;
     clearAdvance();
+    clearRevealAnim();
+    setRevealRemain(null);
+  };
+
+  /** User panned/zoomed — keep the corrector up, but cancel auto-advance. */
+  const onMapInteract = (): void => {
+    if (!revealCounting.current) return;
+    stopRevealCountdown();
+  };
+
+  const advance = (): void => {
+    stopRevealCountdown();
     const e = engineRef.current;
     e?.clearPins();
     e?.clearFlashes();
@@ -152,24 +229,77 @@ export default function App(): JSX.Element {
     advanceTimer.current = window.setTimeout(advance, ms);
   };
 
-  useEffect(() => clearAdvance, []);
+  const startRevealCountdown = (): void => {
+    stopRevealCountdown();
+    revealCounting.current = true;
+    const t0 = performance.now();
+    setRevealRemain(1);
+    scheduleAdvance(REVEAL_MS);
+    const tick = (now: number): void => {
+      if (!revealCounting.current) return;
+      const remain = Math.max(0, 1 - (now - t0) / REVEAL_MS);
+      setRevealRemain(remain);
+      if (remain > 0) revealRaf.current = requestAnimationFrame(tick);
+    };
+    revealRaf.current = requestAnimationFrame(tick);
+  };
+
+  useEffect(
+    () => () => {
+      clearAdvance();
+      clearRevealAnim();
+    },
+    []
+  );
 
   const beginRun = (): void => {
     if (!world) return;
-    const pool = shuffle(regionPool(world, settings.region))
-      .slice(0, settings.roundLength)
+    stopRevealCountdown();
+    const rules = pickMatchRules(settings);
+    const pool = shuffle(regionPool(world, rules.region))
+      .slice(0, rules.roundLength)
       .map((c) => c.id);
     if (pool.length === 0) return;
     recorded.current = false;
     setSavedScore(false);
     setPersonalBest(false);
     setPaused(false);
+    setSettingsApplyPrompt(false);
+    setRunRules(rules);
     setScreen("game");
     const e = engineRef.current;
     e?.clearPins();
     e?.clearFlashes();
     e?.resetView();
-    dispatch({ type: "start", pool, maxAttempts: settings.attempts, now: performance.now() });
+    dispatch({ type: "start", pool, maxAttempts: rules.attempts, now: performance.now() });
+  };
+
+  const openSettings = (): void => {
+    setOverlay("settings");
+  };
+
+  const closeSettings = (): void => {
+    setOverlay(null);
+    if (screen === "game" && !matchRulesEqual(pickMatchRules(settings), runRules)) {
+      setSettingsApplyPrompt(true);
+    }
+  };
+
+  const applySettingsRestart = (): void => {
+    setSettingsApplyPrompt(false);
+    beginRun();
+  };
+
+  const applySettingsNextMatch = (): void => {
+    setSettingsApplyPrompt(false);
+  };
+
+  /** Menu region pick — the ambient globe glides to the chosen continent. */
+  const selectRegion = (region: Region): void => {
+    sfx.unlockAudio();
+    sfx.sfxTap();
+    updateSettings({ region });
+    engineRef.current?.flyTo(REGION_FOCUS[region], { dur: 1100 });
   };
 
   const onPlay = (): void => {
@@ -229,7 +359,7 @@ export default function App(): JSX.Element {
         elapsedMs: elapsed,
         attempt: gs.attempt,
         hintsUsed: gs.hintsUsed,
-        speedBonusEnabled: settings.speedBonus,
+        speedBonusEnabled: runRules.speedBonus,
       });
       const iso = target.props.iso;
       const discovery = Boolean(iso && !passport[iso]);
@@ -237,18 +367,20 @@ export default function App(): JSX.Element {
       const streakAfter = gs.streak + 1;
 
       e?.addPin(lonlat, "correct");
+      e?.clearDirectionHint();
       e?.ripple(lonlat, discovery ? "gold" : "correct");
       e?.flash(target.id, discovery ? "gold" : "correct");
       if (discovery) {
-        e?.confettiBurst(screenPx);
+        e?.confettiBurst(screenPx, "discovery");
         sfx.sfxDiscovery();
         if (iso) setPassport(stampPassport(iso));
       } else {
+        e?.confettiBurst(screenPx, "correct");
         sfx.sfxCorrect(gs.streak);
       }
       if (streakAfter > 0 && streakAfter % 5 === 0) {
         sfx.sfxMilestone();
-        e?.confettiBurst(screenPx);
+        e?.confettiBurst(screenPx, "milestone");
       }
 
       setAnnounce(
@@ -269,28 +401,30 @@ export default function App(): JSX.Element {
       return;
     }
 
-    // miss
+    // miss — caption stays under this pin so earlier tries remain visible
     const dist = distanceKm(lonlat, target.centroid);
     const dir = compassDirection(lonlat, target.centroid);
     const willReveal = gs.attempt >= gs.maxAttempts;
-    e?.addPin(lonlat, "miss");
+    const attemptsLeft = gs.maxAttempts - gs.attempt;
+    const pinLines = willReveal
+      ? [STR.game.miss(formatKm(dist))]
+      : [STR.game.miss(formatKm(dist)), STR.game.attemptsLeft(attemptsLeft)];
+    e?.addPin(lonlat, "miss", pinLines);
     e?.ripple(lonlat, "miss");
 
     if (willReveal) {
+      e?.clearDirectionHint();
       sfx.sfxReveal();
-      e?.flash(target.id, "reveal", 2800);
+      e?.flash(target.id, "reveal", REVEAL_FLASH_MS);
       e?.flyTo(target.centroid, { dur: 900 });
       setAnnounce(STR.a11y.announceReveal(target.props.name));
       dispatch({ type: "miss", distanceKm: dist, direction: dir });
-      scheduleAdvance(REVEAL_MS);
+      startRevealCountdown();
     } else {
+      e?.showDirectionHint(lonlat, dir);
       sfx.sfxMiss();
       setAnnounce(
-        STR.a11y.announceMiss(
-          formatKm(dist),
-          STR.compass[dir],
-          gs.maxAttempts - gs.attempt
-        )
+        STR.a11y.announceMiss(formatKm(dist), STR.compass[dir], attemptsLeft)
       );
       dispatch({ type: "miss", distanceKm: dist, direction: dir });
     }
@@ -309,9 +443,10 @@ export default function App(): JSX.Element {
       }
       return;
     }
-    if (screen !== "game" || paused) return;
+    if (screen !== "game" || paused || overlay || settingsApplyPrompt) return;
+    // Correct feedback: tap to skip ahead. Reveal/skip: let them pan first; Next dismisses.
     if (gs.phase === "feedback") {
-      advance();
+      if (gs.outcome?.kind === "correct") advance();
       return;
     }
     if (gs.phase !== "prompt") return;
@@ -320,13 +455,7 @@ export default function App(): JSX.Element {
   };
 
   const onHint = (): void => {
-    if (!world || gs.phase !== "prompt" || gs.hintsUsed >= 3 || !settings.hintsEnabled) return;
-    const target = world.countries[gs.pool[gs.index]];
-    const level = gs.hintsUsed + 1;
-    if (level === 3) {
-      engineRef.current?.flash(target.id, "hint", 1600);
-      engineRef.current?.ripple(target.centroid, "neutral");
-    }
+    if (!world || gs.phase !== "prompt" || gs.hintsUsed >= 3 || !runRules.hintsEnabled) return;
     sfx.sfxTap();
     dispatch({ type: "hint" });
   };
@@ -335,20 +464,24 @@ export default function App(): JSX.Element {
     if (!world || gs.phase !== "prompt") return;
     const target = world.countries[gs.pool[gs.index]];
     sfx.sfxReveal();
-    engineRef.current?.flash(target.id, "reveal", 2800);
+    engineRef.current?.flash(target.id, "reveal", REVEAL_FLASH_MS);
     engineRef.current?.flyTo(target.centroid, { dur: 900 });
     setAnnounce(STR.game.skipped(target.props.name));
     dispatch({ type: "skip" });
-    scheduleAdvance(REVEAL_MS);
+    startRevealCountdown();
   };
 
   const backToMenu = (): void => {
-    clearAdvance();
+    stopRevealCountdown();
     setPaused(false);
     setExploreSel(null);
-    engineRef.current?.clearPins();
-    engineRef.current?.clearFlashes();
-    engineRef.current?.setSelected(null);
+    const e = engineRef.current;
+    e?.clearPins();
+    e?.clearFlashes();
+    e?.setSelected(null);
+    // Recompose the menu view on the player's chosen region instead of
+    // leaving the camera wherever the round ended.
+    e?.resetView(REGION_FOCUS[settings.region]);
     setScreen("menu");
   };
 
@@ -375,48 +508,48 @@ export default function App(): JSX.Element {
     const eng = engineRef.current;
 
     if (e.key === "Escape") {
-      if (overlay) setOverlay(null);
-      else if (screen === "game") setPaused((p) => !p);
+      if (settingsApplyPrompt) {
+        applySettingsNextMatch();
+      } else if (overlay === "settings") {
+        closeSettings();
+      } else if (overlay) {
+        setOverlay(null);
+      } else if (screen === "game") setPaused((p) => !p);
       else if (screen === "explore") backToMenu();
       return;
     }
-    if (overlay || tutorialActive || paused) return;
+    if (overlay || settingsApplyPrompt || tutorialActive || paused) return;
     if (screen !== "game" && screen !== "explore") return;
     if (!eng) return;
 
-    const nav = (dx: number, dy: number): void => {
+    const arrow = ARROW_KEYS[e.key];
+    if (arrow) {
       e.preventDefault();
+      if (e.repeat) return; // controller already tracks held state
       if (!keyboardNav) {
         setKeyboardNav(true);
         setAnnounce(STR.a11y.crosshairOn);
       }
-      eng.nudge(dx, dy);
-    };
+      eng.setNavKey(arrow, true);
+      return;
+    }
+
+    const zoom = ZOOM_KEYS[e.key];
+    if (zoom) {
+      e.preventDefault();
+      if (e.repeat) return;
+      eng.setZoomKey(zoom, true);
+      return;
+    }
 
     switch (e.key) {
-      case "ArrowLeft":
-        nav(-1, 0);
-        break;
-      case "ArrowRight":
-        nav(1, 0);
-        break;
-      case "ArrowUp":
-        nav(0, -1);
-        break;
-      case "ArrowDown":
-        nav(0, 1);
-        break;
-      case "+":
-      case "=":
-        eng.zoomBy(1.4);
-        break;
-      case "-":
-      case "_":
-        eng.zoomBy(1 / 1.4);
-        break;
       case "Enter":
       case " ": {
         e.preventDefault();
+        if (screen === "game" && gs.phase === "feedback" && gs.outcome?.kind !== "correct") {
+          advance();
+          break;
+        }
         setKeyboardNav(true);
         const center = eng.centerLonLat();
         if (center) {
@@ -436,9 +569,25 @@ export default function App(): JSX.Element {
   };
 
   useEffect(() => {
-    const fn = (e: KeyboardEvent): void => keyRef.current(e);
-    window.addEventListener("keydown", fn);
-    return () => window.removeEventListener("keydown", fn);
+    const onDown = (e: KeyboardEvent): void => keyRef.current(e);
+    const onUp = (e: KeyboardEvent): void => {
+      const arrow = ARROW_KEYS[e.key];
+      if (arrow) {
+        engineRef.current?.setNavKey(arrow, false);
+        return;
+      }
+      const zoom = ZOOM_KEYS[e.key];
+      if (zoom) engineRef.current?.setZoomKey(zoom, false);
+    };
+    const onBlur = (): void => engineRef.current?.clearNavKeys();
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+      window.removeEventListener("blur", onBlur);
+    };
   }, []);
 
   // ---------------- render ----------------
@@ -473,7 +622,7 @@ export default function App(): JSX.Element {
       ? [
           STR.game.hintContinent(STR.regions[target.props.continent] ?? target.props.continent),
           STR.game.hintCapitalFlag(target.flag ?? "", target.props.capital ?? ""),
-          STR.game.hintFlash,
+          STR.game.hintPopulation(formatPopulation(target.props.pop)),
         ][gs.hintsUsed - 1]
       : null;
 
@@ -489,12 +638,16 @@ export default function App(): JSX.Element {
         interactive={interactive}
         ambient={ambient}
         onTap={onMapTap}
+        onInteract={onMapInteract}
       />
 
       {screen === "menu" && !tutorialActive && (
         <Menu
+          world={world}
+          passport={passport}
           region={settings.region}
-          onRegion={(region: Region) => updateSettings({ region })}
+          roundLength={settings.roundLength}
+          onRegion={selectRegion}
           onPlay={onPlay}
           onExplore={() => {
             sfx.unlockAudio();
@@ -503,7 +656,7 @@ export default function App(): JSX.Element {
           }}
           onPassport={() => setOverlay("passport")}
           onLeaderboard={() => setOverlay("leaderboard")}
-          onSettings={() => setOverlay("settings")}
+          onSettings={openSettings}
         />
       )}
 
@@ -514,10 +667,13 @@ export default function App(): JSX.Element {
           gs={gs}
           world={world}
           hintText={hintText}
-          hintsAllowed={settings.hintsEnabled}
+          hintsAllowed={runRules.hintsEnabled}
           onPause={() => setPaused(true)}
+          onSettings={openSettings}
           onHint={onHint}
           onSkip={onSkip}
+          onAdvance={advance}
+          revealRemain={revealRemain}
           onZoom={(f) => engineRef.current?.zoomBy(f)}
         />
       )}
@@ -526,25 +682,27 @@ export default function App(): JSX.Element {
         <>
           <div className="explore-hint">{STR.explore.hint}</div>
           <div className="hud-bottom">
-            <button className="btn btn-ghost" onClick={backToMenu}>
-              ← {STR.explore.back}
-            </button>
-          </div>
-          <div className="zoom-stack">
-            <button
-              className="icon-btn"
-              onClick={() => engineRef.current?.zoomBy(1.5)}
-              aria-label={STR.game.zoomIn}
-            >
-              +
-            </button>
-            <button
-              className="icon-btn"
-              onClick={() => engineRef.current?.zoomBy(1 / 1.5)}
-              aria-label={STR.game.zoomOut}
-            >
-              −
-            </button>
+            <div className="hud-actions">
+              <button className="btn btn-ghost" onClick={backToMenu}>
+                ← {STR.explore.back}
+              </button>
+            </div>
+            <div className="zoom-stack">
+              <button
+                className="icon-btn"
+                onClick={() => engineRef.current?.zoomBy(1.5)}
+                aria-label={STR.game.zoomIn}
+              >
+                +
+              </button>
+              <button
+                className="icon-btn"
+                onClick={() => engineRef.current?.zoomBy(1 / 1.5)}
+                aria-label={STR.game.zoomOut}
+              >
+                −
+              </button>
+            </div>
           </div>
           {exploreSel && (
             <ExploreCard
@@ -574,6 +732,9 @@ export default function App(): JSX.Element {
             <button className="btn btn-primary" onClick={() => setPaused(false)}>
               {STR.game.resume}
             </button>
+            <button className="btn btn-ghost" onClick={beginRun}>
+              {STR.pause.restart}
+            </button>
             <button className="btn btn-ghost" onClick={backToMenu}>
               {STR.game.quit}
             </button>
@@ -585,13 +746,26 @@ export default function App(): JSX.Element {
         <SettingsSheet
           settings={settings}
           onChange={updateSettings}
-          onClose={() => setOverlay(null)}
+          onClose={closeSettings}
           onReplayTutorial={() => {
             setOverlay(null);
             pendingPlay.current = false;
             setTutorialActive(true);
           }}
         />
+      )}
+      {settingsApplyPrompt && (
+        <Sheet title={STR.settings.applyTitle} onClose={applySettingsNextMatch}>
+          <p className="set-apply-body">{STR.settings.applyBody}</p>
+          <div className="results-actions">
+            <button className="btn btn-primary" onClick={applySettingsRestart}>
+              {STR.settings.applyRestart}
+            </button>
+            <button className="btn btn-ghost" onClick={applySettingsNextMatch}>
+              {STR.settings.applyNext}
+            </button>
+          </div>
+        </Sheet>
       )}
       {overlay === "passport" && (
         <PassportSheet world={world} passport={passport} onClose={() => setOverlay(null)} />

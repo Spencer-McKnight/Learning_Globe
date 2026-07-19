@@ -25,7 +25,10 @@ export function Sheet({ title, onClose, children }: SheetProps): JSX.Element {
         aria-modal="true"
         aria-label={title}
         onKeyDown={(e) => {
-          if (e.key === "Escape") onClose();
+          if (e.key === "Escape") {
+            e.stopPropagation();
+            onClose();
+          }
         }}
       >
         <div className="sheet-head">

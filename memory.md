@@ -22,15 +22,15 @@
 
 - Core loop: prompt shows a country name → player drops a pin → anywhere inside the country counts as correct (forgiving, per spec). Proximity to the country's centroid scales the final 10% of the score.
 - Scoring (cookie-clicker curve, per spec): base 1,000 × streak multiplier `2^min(streak,11)` × accuracy (0.90–1.00) × speed bonus (×1.5 under 4s, ×1.25 under 9s) × attempt penalty (½ per retry) × hint penalty (×0.7 each). Perfect runs reach the millions.
-- 3 attempts per country (configurable 1–3); misses show great-circle distance + compass direction ("warmer/colder"); exhausting attempts reveals the country and resets the streak.
+- 3 attempts per country (configurable 1–3); misses stamp stylized distance captions under each pin on the map (prior tries stay visible for the turn) plus a thin aquamarine glow ring snapped to an 8-wind compass direction — never an exact bearing. Exhausting attempts reveals the country and resets the streak.
 - **Discoveries**: first-ever correct guess of a country stamps it into the persistent Passport (+50,000 bonus, gold fanfare). Collection meta-game drives long-term retention.
-- Hints (3 tiers, each ×0.7 score): continent → flag + capital → brief flash of the country.
+- Hints (3 tiers, each ×0.7 score): continent → flag + capital → population (no map giveaway).
 - Modes: Quiz (region-filtered: World or per-continent pools) and **Explore** (tap any country, learn its name/flag/capital — no scoring).
 - Leaderboard: local top-10 per region. Tutorial: non-invasive first-run offer, 3 steps.
 
 ## Accessibility commitments
 
-- Full keyboard play: arrows rotate/pan, +/− zoom, Enter drops the pin at a center crosshair, H for hint. Complete mouse-only play too.
+- Full keyboard play: hold arrows to glide (velocity + coast via InteractionController), +/− zoom, Enter drops the pin at a center crosshair, H for hint. Complete mouse-only play too.
 - `aria-live` announcer for prompts/results, visible focus rings, ≥44px touch targets, `prefers-reduced-motion` honored (ripples/confetti become fades), high-contrast toggle.
 
 ## Build log
@@ -39,6 +39,13 @@
 - Typecheck and production build clean (74 KB gzipped JS). Verified end-to-end in headless Chrome (playwright-core driving the system Chrome binary — the scripts live in the session scratchpad, easily recreated): menu → tutorial → quiz (miss feedback with distance/direction, hints, skip/reveal with flyTo, correct with discovery bonus + confetti), results → leaderboard save → passport progress, projection switching (all four), high contrast, keyboard crosshair play. Scoring math confirmed in-game: 1,000 base ×2^streak × accuracy × 1.5 speed + 50,000 discovery.
 - Dev-only test hook: `window.__lgEngine` exposes the MapEngine in dev builds (see MapView.tsx) so E2E scripts can aim the camera precisely.
 - Known trade-offs, deliberate: Mercator ocean is a full-canvas fill (the sphere is unbounded under Mercator); flat-map vertical position is a pan offset, not center latitude; disputed entities without ISO codes render but are never quizzed; accuracy stat counts pins dropped, so skips don't hurt it.
+
+- 2026-07-19: **Start-page redesign.** The centered stack (wordmark / chip row / Play / four equal ghost buttons) read as a template and let UI collide with whatever landmass drifted behind it. New structure:
+  - **Masthead** top-left (eyebrow / wordmark / tagline) with settings demoted to a corner icon button, and **journey pills** — live passport count (always) and personal best (appears after the first run) — that open their sheets. Progress is now visible at the root.
+  - **Dock**: one grounded glass console at the bottom holding everything that starts a game. Region picker encodes containment — a full-width World row above a 3×2 continent grid, every option showing its country count. Play carries its context ("WORLD · 10 COUNTRIES") inside the button; Explore sits beneath as a quiet compass-marked action.
+  - **Signature interaction: the region picker steers the planet.** Picking a continent flies the ambient globe there (`REGION_FOCUS` in geo.ts, ~1.1s flyTo; drift resumes after). `backToMenu` recomposes the camera on the chosen region so the menu never opens on a stale game view.
+  - New components: `icons.tsx` (inline stroke icons: compass, sliders, passport, trophy). Menu.tsx rewritten; old `.chip`/`.menu-secondary` CSS removed. `@media (max-height: 720px)` compacts the dock for short phones.
+  - Verification gotcha: macOS headless Chrome `--screenshot` clamps the window to ≥500px wide and crops the PNG — phone-width shots silently lie. Use playwright-core (scratchpad-installed) with `viewport` emulation against the system Chrome binary instead.
 
 ## Ideas for v0.2 (not started)
 

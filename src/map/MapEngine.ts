@@ -10,25 +10,35 @@ import {
   type GeoProjection,
 } from "d3-geo";
 import { geoDistance } from "d3-geo";
-import type { Country, LonLat, World } from "../lib/geo";
-import { hitTest } from "../lib/geo";
+import type { CompassKey, Country, LonLat, World } from "../lib/geo";
+import { COMPASS_BEARING, destinationPoint, hitTest } from "../lib/geo";
 import type { ProjectionId } from "../lib/storage";
 import {
+  COLORS,
   CONFETTI_COLORS,
+  CORRECT_CONFETTI,
+  DISCOVERY_CONFETTI,
   MAP_PALETTE,
   MAP_PALETTE_HIGH_CONTRAST,
   type MapPalette,
 } from "../styles/palette";
+import { InteractionController, type ArrowDir, type ZoomDir } from "./InteractionController";
+
+export type ConfettiKind = "discovery" | "correct" | "milestone";
 
 export interface MapEngineCallbacks {
   onTap: (lonlat: LonLat, screen: [number, number]) => void;
   onHover?: (country: Country | null) => void;
+  /** Fired when the user pans, zooms, or keyboard-glides the map. */
+  onInteract?: () => void;
 }
 
 interface Pin {
   lonlat: LonLat;
   color: string;
   born: number;
+  /** Stylized caption drawn under the pin (miss distance, tries left, etc.). */
+  lines?: string[];
 }
 
 interface Ripple {
@@ -55,6 +65,17 @@ interface Particle {
   color: string;
   born: number;
   dur: number;
+  size: number;
+  shape: "rect" | "spark" | "dot";
+  drag: number;
+  gravity: number;
+}
+
+/** Soft compass glow around a miss pin — snaps to an 8-wind, not an exact bearing. */
+interface DirectionHint {
+  lonlat: LonLat;
+  bearingDeg: number;
+  born: number;
 }
 
 interface FlyAnim {
@@ -76,6 +97,10 @@ const X_FACTOR: Record<ProjectionId, number> = {
 const MAX_LAT_MERCATOR = 84;
 const TAP_SLOP_PX = 8;
 const TAP_MAX_MS = 600;
+/** Outer zoom-out bound only — view always initialises / resets at k=1 (fitted). */
+const MIN_K = 0.675;
+/** Shared radius for miss direction ring + pin-drop sonar expand. */
+export const INDICATOR_RING_R = 50;
 
 export class MapEngine {
   private canvas: HTMLCanvasElement;
@@ -114,7 +139,11 @@ export class MapEngine {
   private ripples: Ripple[] = [];
   private flashes = new Map<number, Flash>();
   private particles: Particle[] = [];
+  private directionHint: DirectionHint | null = null;
   private fly: FlyAnim | null = null;
+  private nav = new InteractionController();
+  /** Pivot for soft / held keyboard zoom (defaults to view center). */
+  private zoomPivot: [number, number] | null = null;
 
   private pointers = new Map<number, [number, number]>();
   private gestureMoved = 0;
@@ -155,6 +184,7 @@ export class MapEngine {
 
   destroy(): void {
     this.destroyed = true;
+    this.nav.clear();
     cancelAnimationFrame(this.raf);
     this.resizeObs.disconnect();
     const c = this.canvas;
@@ -229,6 +259,8 @@ export class MapEngine {
     }
     this.path = geoPath(p, this.ctx);
     this.dirty = true;
+    // Keep the crosshair country lit the same way mouse hover does.
+    if (this.crosshairOn && this.interactive) this.hoverAt([this.width / 2, this.height / 2]);
   }
 
   private clampPanY(): void {
@@ -259,6 +291,7 @@ export class MapEngine {
   setInteractive(on: boolean): void {
     this.interactive = on;
     if (!on) this.setHover(null);
+    else if (this.crosshairOn) this.hoverAt([this.width / 2, this.height / 2]);
     this.canvas.style.cursor = on ? "grab" : "default";
   }
 
@@ -285,6 +318,8 @@ export class MapEngine {
   setCrosshair(on: boolean): void {
     this.crosshairOn = on;
     this.dirty = true;
+    if (on && this.interactive) this.hoverAt([this.width / 2, this.height / 2]);
+    else if (!on) this.setHover(null);
   }
 
   setSelected(id: number | null): void {
@@ -307,19 +342,64 @@ export class MapEngine {
   }
 
   zoomBy(factor: number, about?: [number, number]): void {
-    this.zoomAbout(factor, about ?? [this.width / 2, this.height / 2]);
+    const maxK = this.projType === "globe" ? 14 : 18;
+    const pivot = about ?? ([this.width / 2, this.height / 2] as [number, number]);
+    if (this.reduceMotion) {
+      this.zoomAbout(factor, pivot);
+      this.pauseAmbient();
+      return;
+    }
+    // Soft target so keyboard / HUD +/- ease instead of jumping.
+    this.zoomPivot = pivot;
+    this.nav.requestZoom(factor, this.k, MIN_K, maxK);
+    this.fly = null;
     this.pauseAmbient();
+  }
+
+  /**
+   * Continuous keyboard navigation via the interaction controller.
+   * Hold arrows to glide; release to coast. Discrete `nudge` is kept for
+   * one-shot callers / tests.
+   */
+  setNavKey(dir: ArrowDir, pressed: boolean): void {
+    this.nav.setKey(dir, pressed);
+    if (pressed) {
+      this.fly = null;
+      this.pauseAmbient();
+    }
+  }
+
+  setZoomKey(dir: ZoomDir, pressed: boolean): void {
+    this.nav.setZoomKey(dir, pressed);
+    if (pressed) {
+      this.zoomPivot = [this.width / 2, this.height / 2];
+      this.fly = null;
+      this.pauseAmbient();
+    }
+  }
+
+  clearNavKeys(): void {
+    this.nav.clear();
   }
 
   /** Keyboard navigation: move the view by a fraction of the viewport. */
   nudge(dxSign: number, dySign: number): void {
+    this.applyNavDelta(
+      dxSign * Math.min(this.width, this.height) * 0.12,
+      dySign * Math.min(this.width, this.height) * 0.12
+    );
+  }
+
+  /** Apply a screen-space pan in the nudge convention (+x right, +y down). */
+  private applyNavDelta(dx: number, dy: number): void {
+    if (dx === 0 && dy === 0) return;
+    this.notifyInteract();
     const degPerPx = 180 / Math.PI / (this.baseScale * this.k * X_FACTOR[this.projType]);
-    const step = Math.min(this.width, this.height) * 0.12;
-    this.center[0] += dxSign * step * degPerPx;
+    this.center[0] += dx * degPerPx;
     if (this.projType === "globe") {
-      this.center[1] = clampLat(this.center[1] - dySign * step * degPerPx);
+      this.center[1] = clampLat(this.center[1] - dy * degPerPx);
     } else {
-      this.panY -= dySign * step;
+      this.panY -= dy;
     }
     this.fly = null;
     this.pauseAmbient();
@@ -337,6 +417,7 @@ export class MapEngine {
   }
 
   flyTo(target: LonLat, opts: { zoom?: number; dur?: number } = {}): void {
+    this.nav.clear();
     const dur = opts.dur ?? 900;
     const k1 = opts.zoom ?? this.k;
     if (this.reduceMotion || dur <= 0) {
@@ -382,9 +463,10 @@ export class MapEngine {
   }
 
   private zoomAbout(factor: number, px: [number, number]): void {
+    this.notifyInteract();
     const before = this.invert(px);
     const maxK = this.projType === "globe" ? 14 : 18;
-    this.k = Math.max(1, Math.min(maxK, this.k * factor));
+    this.k = Math.max(MIN_K, Math.min(maxK, this.k * factor));
     this.apply();
     if (!before) return;
     const after = this.invert(px);
@@ -400,21 +482,62 @@ export class MapEngine {
     this.apply();
   }
 
+  private notifyInteract(): void {
+    this.cb.onInteract?.();
+  }
+
   // ------------------------------------------------------------------
   // effects
   // ------------------------------------------------------------------
 
-  addPin(lonlat: LonLat, kind: "correct" | "miss"): void {
+  addPin(lonlat: LonLat, kind: "correct" | "miss", lines?: string[]): void {
+    // Keep historical miss captions as distance-only; tries-left belongs on the latest pin.
+    if (lines?.length) {
+      for (const pin of this.pins) {
+        if (pin.lines && pin.lines.length > 1) pin.lines = [pin.lines[0]];
+      }
+    }
     this.pins.push({
       lonlat,
       color: kind === "correct" ? this.palette.correct : this.palette.miss,
       born: performance.now(),
+      lines: lines?.length ? lines : undefined,
     });
     this.dirty = true;
   }
 
   clearPins(): void {
     this.pins = [];
+    this.directionHint = null;
+    this.dirty = true;
+  }
+
+  /** Captions for DOM overlays (tide-gradient type, not canvas ink). */
+  pinCaptions(): { lonlat: LonLat; lines: string[]; born: number }[] {
+    const out: { lonlat: LonLat; lines: string[]; born: number }[] = [];
+    for (const pin of this.pins) {
+      if (!pin.lines?.length) continue;
+      out.push({ lonlat: pin.lonlat, lines: pin.lines, born: pin.born });
+    }
+    return out;
+  }
+
+  /**
+   * Thin ring around a miss pin with a glowing arc in one of eight compass
+   * directions. Discrete winds only — never aims exactly at the target.
+   */
+  showDirectionHint(lonlat: LonLat, direction: CompassKey): void {
+    this.directionHint = {
+      lonlat: [...lonlat],
+      bearingDeg: COMPASS_BEARING[direction],
+      born: performance.now(),
+    };
+    this.dirty = true;
+  }
+
+  clearDirectionHint(): void {
+    if (!this.directionHint) return;
+    this.directionHint = null;
     this.dirty = true;
   }
 
@@ -431,7 +554,7 @@ export class MapEngine {
       lonlat,
       color,
       born: performance.now(),
-      dur: this.reduceMotion ? 400 : 1100,
+      dur: this.reduceMotion ? 400 : 900,
     });
     this.dirty = true;
   }
@@ -452,26 +575,114 @@ export class MapEngine {
     this.dirty = true;
   }
 
-  confettiBurst(at?: [number, number]): void {
+  confettiBurst(at?: [number, number], kind: ConfettiKind = "milestone"): void {
     if (this.reduceMotion) return;
     const [cx, cy] = at ?? [this.width / 2, this.height / 2];
     const now = performance.now();
-    for (let i = 0; i < 42; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const speed = 2 + Math.random() * 5.5;
-      this.particles.push({
-        x: cx,
-        y: cy,
-        vx: Math.cos(a) * speed,
-        vy: Math.sin(a) * speed - 3,
-        rot: Math.random() * Math.PI,
-        vr: (Math.random() - 0.5) * 0.4,
-        color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-        born: now,
-        dur: 1200 + Math.random() * 700,
+
+    if (kind === "discovery") {
+      // Gold fanfare: dense burst + lingering sparkle halo
+      this.spawnParticles(cx, cy, now, {
+        count: 58,
+        colors: DISCOVERY_CONFETTI,
+        speedMin: 2.4,
+        speedMax: 8.2,
+        lift: 4.2,
+        durMin: 1400,
+        durMax: 2400,
+        sizeMin: 2.4,
+        sizeMax: 6.2,
+        shapes: ["rect", "spark", "spark", "dot"],
+        gravity: 0.11,
+        drag: 0.988,
+      });
+      this.spawnParticles(cx, cy, now + 40, {
+        count: 22,
+        colors: DISCOVERY_CONFETTI,
+        speedMin: 0.6,
+        speedMax: 3.2,
+        lift: 1.4,
+        durMin: 1600,
+        durMax: 2800,
+        sizeMin: 1.6,
+        sizeMax: 3.8,
+        shapes: ["spark", "dot"],
+        gravity: 0.04,
+        drag: 0.994,
+      });
+    } else if (kind === "correct") {
+      // Ocean splash — greens/blues/seafoam, still under a discovery
+      this.spawnParticles(cx, cy, now, {
+        count: 36,
+        colors: CORRECT_CONFETTI,
+        speedMin: 1.6,
+        speedMax: 5.6,
+        lift: 3.2,
+        durMin: 1000,
+        durMax: 1700,
+        sizeMin: 2,
+        sizeMax: 4.8,
+        shapes: ["dot", "spark", "rect", "dot", "spark"],
+        gravity: 0.085,
+        drag: 0.989,
+      });
+    } else {
+      this.spawnParticles(cx, cy, now, {
+        count: 42,
+        colors: CONFETTI_COLORS,
+        speedMin: 2,
+        speedMax: 5.5,
+        lift: 3,
+        durMin: 1200,
+        durMax: 1900,
+        sizeMin: 2.2,
+        sizeMax: 5,
+        shapes: ["rect", "spark", "dot"],
+        gravity: 0.12,
+        drag: 0.988,
       });
     }
     this.dirty = true;
+  }
+
+  private spawnParticles(
+    cx: number,
+    cy: number,
+    now: number,
+    opts: {
+      count: number;
+      colors: readonly string[];
+      speedMin: number;
+      speedMax: number;
+      lift: number;
+      durMin: number;
+      durMax: number;
+      sizeMin: number;
+      sizeMax: number;
+      shapes: Array<Particle["shape"]>;
+      gravity: number;
+      drag: number;
+    }
+  ): void {
+    for (let i = 0; i < opts.count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const speed = opts.speedMin + Math.random() * (opts.speedMax - opts.speedMin);
+      this.particles.push({
+        x: cx + (Math.random() - 0.5) * 6,
+        y: cy + (Math.random() - 0.5) * 6,
+        vx: Math.cos(a) * speed,
+        vy: Math.sin(a) * speed - opts.lift,
+        rot: Math.random() * Math.PI,
+        vr: (Math.random() - 0.5) * 0.45,
+        color: opts.colors[i % opts.colors.length],
+        born: now,
+        dur: opts.durMin + Math.random() * (opts.durMax - opts.durMin),
+        size: opts.sizeMin + Math.random() * (opts.sizeMax - opts.sizeMin),
+        shape: opts.shapes[i % opts.shapes.length],
+        gravity: opts.gravity,
+        drag: opts.drag,
+      });
+    }
   }
 
   // ------------------------------------------------------------------
@@ -501,13 +712,16 @@ export class MapEngine {
   private onPointerMove = (e: PointerEvent): void => {
     const prev = this.pointers.get(e.pointerId);
     if (!prev) {
-      if (this.interactive) this.hoverAt([e.offsetX, e.offsetY]);
+      // Crosshair owns hover while keyboard aiming; don't fight it with the mouse.
+      if (this.interactive && !this.crosshairOn) this.hoverAt([e.offsetX, e.offsetY]);
       return;
     }
     const cur: [number, number] = [e.offsetX, e.offsetY];
     this.pointers.set(e.pointerId, cur);
 
     if (this.pointers.size === 2) {
+      this.nav.clearZoom();
+      this.zoomPivot = null;
       const [a, b] = [...this.pointers.values()];
       const dist = Math.hypot(a[0] - b[0], a[1] - b[1]);
       const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
@@ -524,6 +738,9 @@ export class MapEngine {
   };
 
   private drag(dx: number, dy: number): void {
+    // Pointer drag wins over keyboard coast so the two don't fight.
+    this.nav.clear();
+    this.notifyInteract();
     const scale = this.baseScale * this.k;
     const degPerPx = 180 / Math.PI / (scale * X_FACTOR[this.projType]);
     this.center[0] -= dx * degPerPx;
@@ -560,11 +777,15 @@ export class MapEngine {
   };
 
   private onPointerLeave = (): void => {
+    if (this.crosshairOn) return;
     this.setHover(null);
   };
 
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();
+    // Direct wheel input cancels eased keyboard zoom so they don't fight.
+    this.nav.clearZoom();
+    this.zoomPivot = null;
     const factor = Math.exp(-e.deltaY * 0.0022);
     this.zoomAbout(factor, [e.offsetX, e.offsetY]);
     this.pauseAmbient();
@@ -592,8 +813,10 @@ export class MapEngine {
 
   private hasActiveEffects(now: number): boolean {
     if (this.fly) return true;
+    if (this.nav.active) return true;
     if (this.ripples.length || this.particles.length || this.flashes.size) return true;
     if (this.pins.some((p) => now - p.born < 500)) return true;
+    if (this.directionHint && !this.reduceMotion) return true;
     return false;
   }
 
@@ -611,10 +834,28 @@ export class MapEngine {
       // Flat projections ignore center latitude; follow it with vertical pan.
       if (this.projType !== "globe") this.centerFlatOn(this.center);
       else this.apply();
+    } else {
+      const motion = this.nav.tick(dt, this.reduceMotion, this.k);
+      if (motion) {
+        if (motion.zoom !== 1) {
+          const pivot =
+            this.zoomPivot ?? ([this.width / 2, this.height / 2] as [number, number]);
+          this.zoomAbout(motion.zoom, pivot);
+        }
+        if (motion.dx !== 0 || motion.dy !== 0) {
+          this.applyNavDelta(motion.dx, motion.dy);
+        }
+      } else {
+        this.zoomPivot = null;
+      }
     }
 
     const spinning =
-      this.ambient && !this.reduceMotion && now > this.ambientPausedUntil && !this.fly;
+      this.ambient &&
+      !this.reduceMotion &&
+      now > this.ambientPausedUntil &&
+      !this.fly &&
+      !this.nav.active;
     if (spinning) {
       this.center[0] += (dt / 1000) * 3.2;
       this.apply();
@@ -723,11 +964,14 @@ export class MapEngine {
         continue;
       }
       const c = this.world.countries[id];
-      const pulse = this.reduceMotion ? 0.55 : 0.45 + 0.3 * Math.sin(age * Math.PI * 6);
+      // Persistent reveals (infinite dur) pulse on wall-clock time so the glow stays alive.
+      const pulsePhase = Number.isFinite(f.dur) ? age * Math.PI * 6 : ((now - f.born) / 1000) * Math.PI * 2;
+      const pulse = this.reduceMotion ? 0.55 : 0.45 + 0.3 * Math.sin(pulsePhase);
+      const fade = Number.isFinite(f.dur) ? 1 - age * 0.5 : 1;
       ctx.beginPath();
       this.path(c.feature as GeoJSON.Feature);
       if (f.fill) {
-        ctx.fillStyle = withAlpha(f.color, pulse * (1 - age * 0.5));
+        ctx.fillStyle = withAlpha(f.color, pulse * fade);
         ctx.fill();
       }
       ctx.strokeStyle = withAlpha(f.color, Math.min(1, pulse + 0.35));
@@ -735,23 +979,48 @@ export class MapEngine {
       ctx.stroke();
     }
 
-    // sonar ripples
+    // sonar ripples — expand only as far as the indicator ring
     this.ripples = this.ripples.filter((r) => now - r.born < r.dur);
     for (const r of this.ripples) {
       if (!this.isVisible(r.lonlat)) continue;
       const p = this.projection(r.lonlat);
       if (!p) continue;
       const age = (now - r.born) / r.dur;
-      for (let ring = 0; ring < 3; ring++) {
-        const ringAge = age - ring * 0.14;
-        if (ringAge < 0 || ringAge > 1) continue;
-        const radius = easeOut(ringAge) * 52;
+      const breath = this.reduceMotion ? 1 : 0.92 + 0.08 * Math.sin(age * Math.PI * 3.2);
+
+      // soft wash that blooms then clears inside the ring
+      if (!this.reduceMotion && age < 0.72) {
+        const washT = easeOut(age / 0.72);
+        const washR = Math.max(0.5, washT * INDICATOR_RING_R * breath);
+        const wash = ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], washR);
+        wash.addColorStop(0, withAlpha(r.color, (1 - washT) * 0.22));
+        wash.addColorStop(0.55, withAlpha(r.color, (1 - washT) * 0.1));
+        wash.addColorStop(1, withAlpha(r.color, 0));
         ctx.beginPath();
-        ctx.arc(p[0], p[1], Math.max(0.5, radius), 0, Math.PI * 2);
-        ctx.strokeStyle = withAlpha(r.color, (1 - ringAge) * 0.8);
-        ctx.lineWidth = 2.2 - ring * 0.5;
+        ctx.arc(p[0], p[1], washR, 0, Math.PI * 2);
+        ctx.fillStyle = wash;
+        ctx.fill();
+      }
+
+      for (let ring = 0; ring < 3; ring++) {
+        const ringAge = age - ring * 0.16;
+        if (ringAge < 0 || ringAge > 1) continue;
+        // Ease out fast, then settle at the indicator ring edge
+        const expand = 1 - (1 - ringAge) ** 2.6;
+        const radius = Math.max(0.5, expand * INDICATOR_RING_R);
+        const fade = (1 - ringAge) ** 1.15;
+        const alpha = fade * (0.42 - ring * 0.08) * breath;
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], radius, 0, Math.PI * 2);
+        ctx.strokeStyle = withAlpha(r.color, alpha);
+        ctx.lineWidth = (2.4 - ring * 0.55) * (0.85 + 0.15 * (1 - expand));
         ctx.stroke();
       }
+    }
+
+    // direction hint ring (under pins so the pin sits in the ring's center)
+    if (this.directionHint) {
+      this.drawDirectionHint(this.directionHint, now);
     }
 
     // pins
@@ -769,17 +1038,23 @@ export class MapEngine {
       const alive: Particle[] = [];
       for (const pt of this.particles) {
         const age = (now - pt.born) / pt.dur;
+        if (age < 0) {
+          alive.push(pt);
+          continue;
+        }
         if (age >= 1) continue;
         pt.x += pt.vx;
         pt.y += pt.vy;
-        pt.vy += 0.12;
+        pt.vx *= pt.drag;
+        pt.vy = pt.vy * pt.drag + pt.gravity;
         pt.rot += pt.vr;
+        const fade = age < 0.7 ? 1 : 1 - (age - 0.7) / 0.3;
         ctx.save();
         ctx.translate(pt.x, pt.y);
         ctx.rotate(pt.rot);
-        ctx.globalAlpha = 1 - age;
+        ctx.globalAlpha = fade;
         ctx.fillStyle = pt.color;
-        ctx.fillRect(-3.5, -2, 7, 4);
+        this.drawParticleShape(ctx, pt.shape, pt.size);
         ctx.restore();
         alive.push(pt);
       }
@@ -813,30 +1088,132 @@ export class MapEngine {
     }
   }
 
+  private drawParticleShape(
+    ctx: CanvasRenderingContext2D,
+    shape: Particle["shape"],
+    size: number
+  ): void {
+    if (shape === "dot") {
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.55, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    if (shape === "spark") {
+      // 4-point sparkle — reads as a soft star without heavy geometry
+      const arm = size;
+      const core = size * 0.28;
+      ctx.beginPath();
+      ctx.moveTo(0, -arm);
+      ctx.quadraticCurveTo(core, -core, arm, 0);
+      ctx.quadraticCurveTo(core, core, 0, arm);
+      ctx.quadraticCurveTo(-core, core, -arm, 0);
+      ctx.quadraticCurveTo(-core, -core, 0, -arm);
+      ctx.closePath();
+      ctx.fill();
+      return;
+    }
+    ctx.fillRect(-size * 0.7, -size * 0.4, size * 1.4, size * 0.8);
+  }
+
   private drawPin(x: number, y: number, scale: number, color: string): void {
     const ctx = this.ctx;
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(scale, scale);
-    // shadow
-    ctx.beginPath();
-    ctx.ellipse(0, 1.5, 5, 2, 0, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(4,8,22,0.45)";
-    ctx.fill();
-    // teardrop
+
+    // Simple marker: round head + short tip (tip at 0,0)
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.bezierCurveTo(-9, -12, -7.5, -22, 0, -22);
-    ctx.bezierCurveTo(7.5, -22, 9, -12, 0, 0);
+    ctx.lineTo(-6.5, -8);
+    ctx.arc(0, -11, 7, Math.PI * 0.82, Math.PI * 0.18, true);
+    ctx.closePath();
     ctx.fillStyle = color;
     ctx.fill();
-    ctx.strokeStyle = this.palette.pinStroke;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+
+    // Foam hole — high contrast on both coral and aquamarine
     ctx.beginPath();
-    ctx.arc(0, -15.5, 3.2, 0, Math.PI * 2);
-    ctx.fillStyle = this.palette.pinStroke;
+    ctx.arc(0, -11, 2.8, 0, Math.PI * 2);
+    ctx.fillStyle = COLORS.foam;
     ctx.fill();
+
+    ctx.restore();
+  }
+
+  private drawDirectionHint(hint: DirectionHint, now: number): void {
+    if (!this.isVisible(hint.lonlat)) return;
+    const origin = this.projection(hint.lonlat);
+    if (!origin) return;
+
+    // Project a nearby point along the discrete wind so the quarter follows the
+    // map (not screen-up) while staying snapped to N/NE/E/… rather than true bearing.
+    let aheadPx: [number, number] | null = null;
+    for (const step of [2.5, 1.2, 0.5]) {
+      const ahead = destinationPoint(hint.lonlat, hint.bearingDeg, step);
+      if (!this.isVisible(ahead)) continue;
+      const p = this.projection(ahead);
+      if (p) {
+        aheadPx = p;
+        break;
+      }
+    }
+    if (!aheadPx) return;
+
+    const peak = Math.atan2(aheadPx[1] - origin[1], aheadPx[0] - origin[0]);
+    const radius = INDICATOR_RING_R;
+    const halfArc = Math.PI / 4; // exact quarter (±45°)
+    const a0 = peak - halfArc;
+    const a1 = peak + halfArc;
+    const appear = Math.min(1, (now - hint.born) / (this.reduceMotion ? 1 : 420));
+    const pulse = this.reduceMotion
+      ? 1
+      : 0.88 + 0.12 * Math.sin((now - hint.born) * 0.0042);
+    const color = withAlpha(COLORS.glow, 0.85 * pulse);
+    const ctx = this.ctx;
+
+    ctx.save();
+    ctx.globalAlpha = easeOut(appear);
+    ctx.lineCap = "butt";
+
+    // quiet full ring
+    ctx.beginPath();
+    ctx.arc(origin[0], origin[1], radius, 0, Math.PI * 2);
+    ctx.strokeStyle = withAlpha(COLORS.surf, 0.2 * pulse);
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+
+    // uniform quarter — arc runs fully to the edges; tips sit just inside & outside
+    const strokeW = 2;
+    const tipLen = 6;
+    const tipHalf = strokeW * 0.85;
+    const tipInset = tipHalf / radius; // ½ tip-width back along the arc from each edge
+    const tipForward = strokeW / 2; // ½ stroke-width out from the ring
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = strokeW;
+    ctx.lineCap = "butt";
+    ctx.lineJoin = "miter";
+    ctx.beginPath();
+    ctx.arc(origin[0], origin[1], radius, a0, a1);
+    ctx.stroke();
+
+    for (const a of [a0 + tipInset, a1 - tipInset]) {
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      const tx = -s;
+      const ty = c;
+      const baseR = radius + tipForward;
+      const tipR = baseR + tipLen;
+      const bx = origin[0] + c * baseR;
+      const by = origin[1] + s * baseR;
+      ctx.beginPath();
+      ctx.moveTo(bx + tx * tipHalf, by + ty * tipHalf);
+      ctx.lineTo(bx - tx * tipHalf, by - ty * tipHalf);
+      ctx.lineTo(origin[0] + c * tipR, origin[1] + s * tipR);
+      ctx.closePath();
+      ctx.fill();
+    }
+
     ctx.restore();
   }
 }
