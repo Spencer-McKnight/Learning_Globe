@@ -42,7 +42,10 @@ export const STR = {
 
   game: {
     find: "Find",
-    progress: (i: number, n: number) => `${i} of ${n}`,
+    progressShort: (i: number, n: number) => `${i}/${n}`,
+    progressAria: (i: number, n: number) => `Country ${i} of ${n}`,
+    hintsAria: (n: number) =>
+      n === 0 ? "No hints left for this country" : `Hint, ${n} left for this country`,
     score: "Score",
     streak: "Streak",
     streakChip: (mult: number) => `streak ×${mult.toLocaleString()}`,
@@ -155,6 +158,42 @@ export const STR = {
       "Some of these change how this round works. Restart now with the new rules, or keep this round as-is and use them next time.",
     applyRestart: "Restart match",
     applyNext: "Apply next match",
+  },
+
+  themes: {
+    title: "Worlds",
+    intro: "Same planet, new light. Every world keeps the game easy to read.",
+    openLabel: "Change world colours",
+    settingsRow: "World colours",
+    groupLabel: "Choose a world",
+    customName: "Your world",
+    customHint: "Pick any colour — a whole world grows from it.",
+    customSwatchAria: (hex: string) => `Custom world colour, currently ${hex}`,
+    names: {
+      deepSea: "Deep Blue Sea",
+      paperAtlas: "Paper Atlas",
+      terraFirma: "Terra Firma",
+      springMeadow: "Spring Meadow",
+      beacon: "Beacon",
+      chalkboard: "Chalkboard",
+      emberDusk: "Ember Dusk",
+      auroraNight: "Aurora Night",
+      candyPop: "Candy Pop",
+      custom: "Your world",
+    } as Record<string, string>,
+    descriptions: {
+      deepSea: "Midnight ocean, sonar pings in the dark.",
+      paperAtlas: "A calm vintage schoolroom map. Easy on the eyes.",
+      terraFirma: "Loam, moss, and copper — the smell of rain on soil.",
+      springMeadow: "New grass under a clear spring sky.",
+      beacon: "Blue and orange, tuned for red-green colour blindness.",
+      chalkboard: "Pure light and shade — readable with any colour vision.",
+      emberDusk: "The last warm minute of a sunset.",
+      auroraNight: "Aurora green and ice over a black polar sea.",
+      candyPop: "Grape soda seas and bubblegum pins.",
+      custom: "Grown from your colour. Feedback stays coral and gold.",
+    } as Record<string, string>,
+    applied: (name: string) => `World changed to ${name}.`,
   },
 
   tutorial: {

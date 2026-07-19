@@ -3,6 +3,7 @@ import type { MutableRefObject } from "react";
 import type { Country, LonLat, World } from "../lib/geo";
 import type { ProjectionId } from "../lib/storage";
 import { INDICATOR_RING_R, MapEngine } from "../map/MapEngine";
+import type { ThemeColors } from "../styles/themes";
 import { STR } from "../content/strings";
 
 interface MapViewProps {
@@ -10,6 +11,7 @@ interface MapViewProps {
   engineRef: MutableRefObject<MapEngine | null>;
   projection: ProjectionId;
   graticule: boolean;
+  themeColors: ThemeColors;
   highContrast: boolean;
   reduceMotion: boolean;
   interactive: boolean;
@@ -116,6 +118,9 @@ export function MapView(props: MapViewProps): JSX.Element {
   useEffect(() => {
     engineRef.current?.setGraticule(props.graticule);
   }, [props.graticule, engineRef]);
+  useEffect(() => {
+    engineRef.current?.setTheme(props.themeColors);
+  }, [props.themeColors, engineRef]);
   useEffect(() => {
     engineRef.current?.setHighContrast(props.highContrast);
   }, [props.highContrast, engineRef]);

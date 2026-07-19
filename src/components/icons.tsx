@@ -63,6 +63,41 @@ export function IconPassport(props: IconProps): JSX.Element {
   );
 }
 
+export function IconPause(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <line x1="9.2" y1="6" x2="9.2" y2="18" />
+      <line x1="14.8" y1="6" x2="14.8" y2="18" />
+    </Svg>
+  );
+}
+
+export function IconBulb(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M8.6 14.2a5.5 5.5 0 1 1 6.8 0c-.8.7-1.4 1.5-1.4 2.4h-4c0-.9-.6-1.7-1.4-2.4z" />
+      <line x1="10" y1="20" x2="14" y2="20" />
+    </Svg>
+  );
+}
+
+export function IconPlus(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <line x1="12" y1="5.5" x2="12" y2="18.5" />
+      <line x1="5.5" y1="12" x2="18.5" y2="12" />
+    </Svg>
+  );
+}
+
+export function IconMinus(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <line x1="5.5" y1="12" x2="18.5" y2="12" />
+    </Svg>
+  );
+}
+
 export function IconTrophy(props: IconProps): JSX.Element {
   return (
     <Svg {...props}>

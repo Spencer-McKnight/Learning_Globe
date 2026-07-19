@@ -7,6 +7,7 @@ interface SettingsSheetProps {
   onChange: (patch: Partial<Settings>) => void;
   onClose: () => void;
   onReplayTutorial: () => void;
+  onOpenThemes: () => void;
 }
 
 function Toggle({
@@ -80,6 +81,7 @@ export function SettingsSheet({
   onChange,
   onClose,
   onReplayTutorial,
+  onOpenThemes,
 }: SettingsSheetProps): JSX.Element {
   const S = STR.settings;
   return (
@@ -95,6 +97,12 @@ export function SettingsSheet({
           columns={2}
           onChange={(projection) => onChange({ projection })}
         />
+        <div className="set-row">
+          <span className="set-label">{STR.themes.settingsRow}</span>
+          <button className="btn btn-ghost" onClick={onOpenThemes}>
+            {STR.themes.names[settings.theme] ?? STR.themes.names.custom}
+          </button>
+        </div>
         <Toggle
           label={S.graticule}
           sub={S.graticuleSub}

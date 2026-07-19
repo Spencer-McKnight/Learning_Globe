@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { ExploreCard } from "./components/ExploreCard";
 import { Hud } from "./components/Hud";
 import { LeaderboardSheet } from "./components/LeaderboardSheet";
@@ -8,6 +8,7 @@ import { PassportSheet } from "./components/PassportSheet";
 import { Results } from "./components/Results";
 import { SettingsSheet } from "./components/SettingsSheet";
 import { Sheet } from "./components/Sheet";
+import { ThemeSheet } from "./components/ThemeSheet";
 import { Tutorial } from "./components/Tutorial";
 import { STR } from "./content/strings";
 import { IDLE_GAME, gameReducer, shuffle } from "./game/reducer";
@@ -44,9 +45,10 @@ import {
 } from "./lib/storage";
 import type { ArrowDir, ZoomDir } from "./map/InteractionController";
 import type { MapEngine } from "./map/MapEngine";
+import { applyThemeToDom, resolveThemeColors, type ThemeId } from "./styles/themes";
 
 type ScreenId = "menu" | "game" | "results" | "explore";
-type OverlayId = null | "settings" | "passport" | "leaderboard";
+type OverlayId = null | "settings" | "passport" | "leaderboard" | "theme";
 
 const ARROW_KEYS: Record<string, ArrowDir> = {
   ArrowLeft: "left",
@@ -122,6 +124,23 @@ export default function App(): JSX.Element {
 
   const reduceMotion =
     settings.reduceMotion === "on" || (settings.reduceMotion === "auto" && osReducedMotion);
+
+  // ---------------- world colours ----------------
+
+  const themeColors = useMemo(
+    () => resolveThemeColors(settings.theme, settings.customColor),
+    [settings.theme, settings.customColor]
+  );
+
+  useEffect(() => {
+    applyThemeToDom(themeColors);
+  }, [themeColors]);
+
+  const selectTheme = (theme: ThemeId): void => {
+    sfx.sfxTap();
+    setSettings((s) => ({ ...s, theme }));
+    setAnnounce(STR.themes.applied(STR.themes.names[theme]));
+  };
 
   // ---------------- boot ----------------
 
@@ -633,6 +652,7 @@ export default function App(): JSX.Element {
         engineRef={engineRef}
         projection={settings.projection}
         graticule={settings.graticule}
+        themeColors={themeColors}
         highContrast={settings.highContrast}
         reduceMotion={reduceMotion}
         interactive={interactive}
@@ -647,7 +667,9 @@ export default function App(): JSX.Element {
           passport={passport}
           region={settings.region}
           roundLength={settings.roundLength}
+          themeColors={themeColors}
           onRegion={selectRegion}
+          onThemes={() => setOverlay("theme")}
           onPlay={onPlay}
           onExplore={() => {
             sfx.unlockAudio();
@@ -747,6 +769,7 @@ export default function App(): JSX.Element {
           settings={settings}
           onChange={updateSettings}
           onClose={closeSettings}
+          onOpenThemes={() => setOverlay("theme")}
           onReplayTutorial={() => {
             setOverlay(null);
             pendingPlay.current = false;
@@ -766,6 +789,15 @@ export default function App(): JSX.Element {
             </button>
           </div>
         </Sheet>
+      )}
+      {overlay === "theme" && (
+        <ThemeSheet
+          themeId={settings.theme}
+          customColor={settings.customColor}
+          onSelect={selectTheme}
+          onCustomColor={(customColor) => updateSettings({ customColor })}
+          onClose={() => setOverlay(null)}
+        />
       )}
       {overlay === "passport" && (
         <PassportSheet world={world} passport={passport} onClose={() => setOverlay(null)} />

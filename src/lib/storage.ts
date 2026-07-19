@@ -1,4 +1,5 @@
 import type { Region } from "./geo";
+import { DEFAULT_CUSTOM_SEED, DEFAULT_THEME_ID, type ThemeId } from "../styles/themes";
 
 export type ProjectionId = "globe" | "naturalEarth" | "equalEarth" | "mercator";
 export type MotionPref = "auto" | "on" | "off";
@@ -16,6 +17,10 @@ export interface Settings {
   hintsEnabled: boolean;
   speedBonus: boolean;
   playerName: string;
+  /** Selected world (colour theme); "custom" derives from customColor. */
+  theme: ThemeId;
+  /** Seed colour the custom world grows from. */
+  customColor: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -31,6 +36,8 @@ export const DEFAULT_SETTINGS: Settings = {
   hintsEnabled: true,
   speedBonus: true,
   playerName: "",
+  theme: DEFAULT_THEME_ID,
+  customColor: DEFAULT_CUSTOM_SEED,
 };
 
 export interface LeaderboardEntry {

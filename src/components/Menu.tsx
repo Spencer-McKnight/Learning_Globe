@@ -3,19 +3,23 @@ import { STR } from "../content/strings";
 import { formatPoints } from "../game/scoring";
 import { REGIONS, regionPool, type Region, type World } from "../lib/geo";
 import { loadStats, type Passport } from "../lib/storage";
+import type { ThemeColors } from "../styles/themes";
 import { IconCompass, IconPassport, IconSliders, IconTrophy } from "./icons";
+import { ThemeOrb } from "./ThemeSheet";
 
 interface MenuProps {
   world: World;
   passport: Passport;
   region: Region;
   roundLength: number;
+  themeColors: ThemeColors;
   onRegion: (r: Region) => void;
   onPlay: () => void;
   onExplore: () => void;
   onPassport: () => void;
   onLeaderboard: () => void;
   onSettings: () => void;
+  onThemes: () => void;
 }
 
 const CONTINENTS = REGIONS.filter((r) => r !== "World");
@@ -41,13 +45,22 @@ export function Menu(props: MenuProps): JSX.Element {
           <p className="tagline">{STR.tagline}</p>
         </div>
 
-        <button
-          className="icon-btn menu-settings"
-          onClick={props.onSettings}
-          aria-label={STR.menu.settings}
-        >
-          <IconSliders />
-        </button>
+        <div className="menu-corner">
+          <button
+            className="icon-btn menu-settings"
+            onClick={props.onSettings}
+            aria-label={STR.menu.settings}
+          >
+            <IconSliders />
+          </button>
+          <button
+            className="icon-btn menu-world"
+            onClick={props.onThemes}
+            aria-label={STR.themes.openLabel}
+          >
+            <ThemeOrb c={props.themeColors} size={30} spin />
+          </button>
+        </div>
 
         <div className="journey">
           <button

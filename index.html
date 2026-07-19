@@ -6,7 +6,24 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
     />
+    <!-- mirrors --color-surface-sunken in theme.css; keep in sync on palette changes -->
     <meta name="theme-color" content="#0b132b" />
+    <script>
+      // Re-apply the saved world colours before first paint so a chosen theme
+      // loads with zero flash of the default. Snapshot written by themes.ts
+      // (applyThemeToDom) under the same key.
+      try {
+        var lgTheme = JSON.parse(localStorage.getItem("lg:theme-css") || "null");
+        if (lgTheme && lgTheme.vars) {
+          for (var lgVar in lgTheme.vars) {
+            document.documentElement.style.setProperty(lgVar, lgTheme.vars[lgVar]);
+          }
+          document.documentElement.style.colorScheme = lgTheme.light ? "light" : "dark";
+          var lgMeta = document.querySelector('meta[name="theme-color"]');
+          if (lgMeta && lgTheme.themeColor) lgMeta.setAttribute("content", lgTheme.themeColor);
+        }
+      } catch (e) {}
+    </script>
     <meta
       name="description"
       content="Learning Globe — a free, gamified world map. Spin the globe, pin your guess, discover every country on Earth."

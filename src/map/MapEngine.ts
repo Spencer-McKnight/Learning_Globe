@@ -13,15 +13,13 @@ import { geoDistance } from "d3-geo";
 import type { CompassKey, Country, LonLat, World } from "../lib/geo";
 import { COMPASS_BEARING, destinationPoint, hitTest } from "../lib/geo";
 import type { ProjectionId } from "../lib/storage";
+import { withAlpha, type ConfettiSet, type MapPalette } from "../styles/palette";
 import {
-  COLORS,
-  CONFETTI_COLORS,
-  CORRECT_CONFETTI,
-  DISCOVERY_CONFETTI,
-  MAP_PALETTE,
-  MAP_PALETTE_HIGH_CONTRAST,
-  type MapPalette,
-} from "../styles/palette";
+  buildConfetti,
+  buildMapPalette,
+  THEMES,
+  type ThemeColors,
+} from "../styles/themes";
 import { InteractionController, type ArrowDir, type ZoomDir } from "./InteractionController";
 
 export type ConfettiKind = "discovery" | "correct" | "milestone";
@@ -129,7 +127,10 @@ export class MapEngine {
   private ambientPausedUntil = 0;
   private graticuleOn = true;
   private reduceMotion = false;
-  private palette: MapPalette = MAP_PALETTE;
+  private themeColors: ThemeColors = THEMES.deepSea;
+  private highContrastOn = false;
+  private palette: MapPalette = buildMapPalette(THEMES.deepSea, false);
+  private confetti: ConfettiSet = buildConfetti(THEMES.deepSea);
   private crosshairOn = false;
   private discoveredTint: Set<string> | null = null;
 
@@ -306,7 +307,19 @@ export class MapEngine {
   }
 
   setHighContrast(on: boolean): void {
-    this.palette = on ? MAP_PALETTE_HIGH_CONTRAST : MAP_PALETTE;
+    this.highContrastOn = on;
+    this.refreshPalette();
+  }
+
+  /** Swap the world's colours; the canvas recolours on the next frame. */
+  setTheme(colors: ThemeColors): void {
+    this.themeColors = colors;
+    this.refreshPalette();
+  }
+
+  private refreshPalette(): void {
+    this.palette = buildMapPalette(this.themeColors, this.highContrastOn);
+    this.confetti = buildConfetti(this.themeColors);
     this.dirty = true;
   }
 
@@ -584,7 +597,7 @@ export class MapEngine {
       // Gold fanfare: dense burst + lingering sparkle halo
       this.spawnParticles(cx, cy, now, {
         count: 58,
-        colors: DISCOVERY_CONFETTI,
+        colors: this.confetti.discovery,
         speedMin: 2.4,
         speedMax: 8.2,
         lift: 4.2,
@@ -598,7 +611,7 @@ export class MapEngine {
       });
       this.spawnParticles(cx, cy, now + 40, {
         count: 22,
-        colors: DISCOVERY_CONFETTI,
+        colors: this.confetti.discovery,
         speedMin: 0.6,
         speedMax: 3.2,
         lift: 1.4,
@@ -614,7 +627,7 @@ export class MapEngine {
       // Ocean splash — greens/blues/seafoam, still under a discovery
       this.spawnParticles(cx, cy, now, {
         count: 36,
-        colors: CORRECT_CONFETTI,
+        colors: this.confetti.correct,
         speedMin: 1.6,
         speedMax: 5.6,
         lift: 3.2,
@@ -629,7 +642,7 @@ export class MapEngine {
     } else {
       this.spawnParticles(cx, cy, now, {
         count: 42,
-        colors: CONFETTI_COLORS,
+        colors: this.confetti.milestone,
         speedMin: 2,
         speedMax: 5.5,
         lift: 3,
@@ -879,9 +892,9 @@ export class MapEngine {
       const r = this.baseScale * this.k;
       // atmosphere glow
       const glow = ctx.createRadialGradient(cx, cy, r * 0.92, cx, cy, r * 1.06);
-      glow.addColorStop(0, "rgba(111,255,233,0)");
-      glow.addColorStop(0.75, this.palette.atmosphere);
-      glow.addColorStop(1, "rgba(111,255,233,0)");
+      glow.addColorStop(0, withAlpha(pal.atmosphere, 0));
+      glow.addColorStop(0.75, pal.atmosphere);
+      glow.addColorStop(1, withAlpha(pal.atmosphere, 0));
       ctx.fillStyle = glow;
       ctx.beginPath();
       ctx.arc(cx, cy, r * 1.08, 0, Math.PI * 2);
@@ -933,7 +946,7 @@ export class MapEngine {
           this.path(c.feature as GeoJSON.Feature);
         }
       }
-      ctx.fillStyle = "rgba(91,192,190,0.28)";
+      ctx.fillStyle = pal.discoveredFill;
       ctx.fill();
     }
 
@@ -1134,7 +1147,7 @@ export class MapEngine {
     // Foam hole — high contrast on both coral and aquamarine
     ctx.beginPath();
     ctx.arc(0, -11, 2.8, 0, Math.PI * 2);
-    ctx.fillStyle = COLORS.foam;
+    ctx.fillStyle = this.palette.pinCore;
     ctx.fill();
 
     ctx.restore();
@@ -1168,7 +1181,7 @@ export class MapEngine {
     const pulse = this.reduceMotion
       ? 1
       : 0.88 + 0.12 * Math.sin((now - hint.born) * 0.0042);
-    const color = withAlpha(COLORS.glow, 0.85 * pulse);
+    const color = withAlpha(this.palette.hintArc, 0.85 * pulse);
     const ctx = this.ctx;
 
     ctx.save();
@@ -1178,7 +1191,7 @@ export class MapEngine {
     // quiet full ring
     ctx.beginPath();
     ctx.arc(origin[0], origin[1], radius, 0, Math.PI * 2);
-    ctx.strokeStyle = withAlpha(COLORS.surf, 0.2 * pulse);
+    ctx.strokeStyle = withAlpha(this.palette.hintRing, 0.2 * pulse);
     ctx.lineWidth = 1.1;
     ctx.stroke();
 
@@ -1244,13 +1257,4 @@ function easeOutBack(t: number): number {
   const c1 = 1.70158;
   const c3 = c1 + 1;
   return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
-}
-
-function withAlpha(hex: string, alpha: number): string {
-  const a = Math.max(0, Math.min(1, alpha));
-  if (hex.startsWith("rgba")) return hex;
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${a.toFixed(3)})`;
 }
