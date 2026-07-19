@@ -1,0 +1,1 @@
+- Example memory 1: Store your memories in simple dot points here. You don't need to store everything, but when you make important decisions or something is important to you, put it here and you won't lose it again.
