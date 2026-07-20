@@ -15,7 +15,7 @@ import { Tutorial } from "./components/Tutorial";
 import { STR } from "./content/strings";
 import { IDLE_GAME, gameReducer, type GuessOutcome } from "./game/reducer";
 import { DISCOVERY_BONUS, formatPoints, scoreGuess } from "./game/scoring";
-import { pickRunPool } from "./game/selection";
+import { planRound } from "./game/selection";
 import type { Account } from "./lib/account";
 import * as sfx from "./lib/audio";
 import {
@@ -362,7 +362,13 @@ export default function App({ account }: { account: Account }): JSX.Element {
     if (!world) return;
     stopRevealCountdown();
     const rules = pickMatchRules(settings);
-    const pool = pickRunPool(regionPool(world, rules.region), history, rules.roundLength);
+    const plan = planRound({
+      candidates: regionPool(world, rules.region),
+      history,
+      passport,
+      count: rules.roundLength,
+    });
+    const pool = plan.ids;
     if (pool.length === 0) return;
     recorded.current = false;
     runId.current = crypto.randomUUID();
