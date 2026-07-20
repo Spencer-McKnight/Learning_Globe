@@ -10,8 +10,8 @@ import {
   type GeoProjection,
 } from "d3-geo";
 import { geoDistance } from "d3-geo";
-import type { CompassKey, Country, LonLat, World } from "../lib/geo";
-import { COMPASS_BEARING, destinationPoint, hitTest } from "../lib/geo";
+import type { CompassKey, Country, LonLat, Region, World } from "../lib/geo";
+import { COMPASS_BEARING, continentRegion, destinationPoint, hitTest } from "../lib/geo";
 import type { ProjectionId } from "../lib/storage";
 import { withAlpha, type ConfettiSet, type MapPalette } from "../styles/palette";
 import {
@@ -21,19 +21,24 @@ import {
   type ThemeColors,
 } from "../styles/themes";
 import { InteractionController, type ArrowDir, type ZoomDir } from "./InteractionController";
+import { buildPinInk, DEFAULT_PIN_ID, PIN_DESIGNS, type PinDesign, type PinId } from "./pins";
 
 export type ConfettiKind = "discovery" | "correct" | "milestone";
 
 export interface MapEngineCallbacks {
   onTap: (lonlat: LonLat, screen: [number, number]) => void;
+  /** A tap that landed off the map entirely (outside the globe's disc). */
+  onVoidTap?: () => void;
   onHover?: (country: Country | null) => void;
+  /** Region-pick mode: the playable region under the cursor, as it changes. */
+  onRegionHover?: (region: Region | null) => void;
   /** Fired when the user pans, zooms, or keyboard-glides the map. */
   onInteract?: () => void;
 }
 
 interface Pin {
   lonlat: LonLat;
-  color: string;
+  kind: "correct" | "miss";
   born: number;
   /** Stylized caption drawn under the pin (miss distance, tries left, etc.). */
   lines?: string[];
@@ -93,8 +98,14 @@ const X_FACTOR: Record<ProjectionId, number> = {
 };
 
 const MAX_LAT_MERCATOR = 84;
-const TAP_SLOP_PX = 8;
-const TAP_MAX_MS = 600;
+/* Tap vs drag. Generous on both axes: a deliberate thumb press on a small
+   country rests longer and wobbles more than a mouse click, and a rejected
+   tap reads as the app ignoring you. */
+const TAP_SLOP_PX = 10;
+const TAP_MAX_MS = 900;
+/** Idle drift: cruising speed, and how long the world takes to reach it. */
+const AMBIENT_DEG_PER_S = 3.2;
+const AMBIENT_SPINUP_MS = 2600;
 /** Outer zoom-out bound only — view always initialises / resets at k=1 (fitted). */
 const MIN_K = 0.675;
 /** Shared radius for miss direction ring + pin-drop sonar expand. */
@@ -124,7 +135,10 @@ export class MapEngine {
 
   private interactive = false;
   private ambient = false;
-  private ambientPausedUntil = 0;
+  /** When the current ambient spell began, for the spin-up ramp. */
+  private ambientSince = 0;
+  /** The player took the wheel: no more idle drift until ambient restarts. */
+  private ambientStopped = false;
   private graticuleOn = true;
   private reduceMotion = false;
   private themeColors: ThemeColors = THEMES.deepSea;
@@ -133,9 +147,19 @@ export class MapEngine {
   private confetti: ConfettiSet = buildConfetti(THEMES.deepSea);
   private crosshairOn = false;
   private discoveredTint: Set<string> | null = null;
+  private pinId: PinId = DEFAULT_PIN_ID;
+  private pinDesign: PinDesign = PIN_DESIGNS[DEFAULT_PIN_ID];
+  private pinThemed = true;
 
   private hoverId: number | null = null;
   private selectedId: number | null = null;
+  /** Menu mode: hover lights whole continents instead of single countries. */
+  private regionPickOn = false;
+  private hoverContinent: Region | null = null;
+  private pickedContinent: string | null = null;
+  private continentIds: Map<string, number[]> | null = null;
+  /** Last mouse position, kept so the ambient spin re-hovers under a still cursor. */
+  private lastPointerPx: [number, number] | null = null;
   private pins: Pin[] = [];
   private ripples: Ripple[] = [];
   private flashes = new Map<number, Flash>();
@@ -262,6 +286,9 @@ export class MapEngine {
     this.dirty = true;
     // Keep the crosshair country lit the same way mouse hover does.
     if (this.crosshairOn && this.interactive) this.hoverAt([this.width / 2, this.height / 2]);
+    // Ambient spin drifts land under a resting cursor; keep the lit continent honest.
+    else if (this.regionPickOn && this.interactive && this.lastPointerPx)
+      this.hoverAt(this.lastPointerPx);
   }
 
   private clampPanY(): void {
@@ -296,8 +323,16 @@ export class MapEngine {
     this.canvas.style.cursor = on ? "grab" : "default";
   }
 
+  /**
+   * Idle drift. Each spell starts from a standstill and winds up to speed,
+   * and the first touch of the controls ends it for good — a globe that
+   * kept creeping back into motion under your hands would feel possessed.
+   */
   setAmbient(on: boolean): void {
+    if (on === this.ambient) return;
     this.ambient = on;
+    this.ambientSince = performance.now();
+    this.ambientStopped = false;
     this.dirty = true;
   }
 
@@ -340,6 +375,37 @@ export class MapEngine {
     this.dirty = true;
   }
 
+  /** Menu mode: hovering lights a whole continent; taps pick play regions. */
+  setRegionPick(on: boolean): void {
+    if (on === this.regionPickOn) return;
+    this.regionPickOn = on;
+    if (this.hoverContinent !== null) {
+      this.hoverContinent = null;
+      this.cb.onRegionHover?.(null);
+    }
+    if (!on) this.lastPointerPx = null;
+    this.dirty = true;
+  }
+
+  /** Persistent tint for the continent the player has picked (null = World). */
+  setPickedContinent(continent: string | null): void {
+    if (continent === this.pickedContinent) return;
+    this.pickedContinent = continent;
+    this.dirty = true;
+  }
+
+  private idsForContinent(continent: string): number[] {
+    if (!this.continentIds) {
+      this.continentIds = new Map();
+      for (const c of this.world.countries) {
+        const list = this.continentIds.get(c.props.continent);
+        if (list) list.push(c.id);
+        else this.continentIds.set(c.props.continent, [c.id]);
+      }
+    }
+    return this.continentIds.get(continent) ?? [];
+  }
+
   /** In explore mode, tint the player's discovered countries. */
   setDiscoveredTint(isoSet: Set<string> | null): void {
     this.discoveredTint = isoSet;
@@ -359,14 +425,14 @@ export class MapEngine {
     const pivot = about ?? ([this.width / 2, this.height / 2] as [number, number]);
     if (this.reduceMotion) {
       this.zoomAbout(factor, pivot);
-      this.pauseAmbient();
+      this.stopAmbient();
       return;
     }
     // Soft target so keyboard / HUD +/- ease instead of jumping.
     this.zoomPivot = pivot;
     this.nav.requestZoom(factor, this.k, MIN_K, maxK);
     this.fly = null;
-    this.pauseAmbient();
+    this.stopAmbient();
   }
 
   /**
@@ -378,7 +444,7 @@ export class MapEngine {
     this.nav.setKey(dir, pressed);
     if (pressed) {
       this.fly = null;
-      this.pauseAmbient();
+      this.stopAmbient();
     }
   }
 
@@ -387,7 +453,7 @@ export class MapEngine {
     if (pressed) {
       this.zoomPivot = [this.width / 2, this.height / 2];
       this.fly = null;
-      this.pauseAmbient();
+      this.stopAmbient();
     }
   }
 
@@ -415,7 +481,7 @@ export class MapEngine {
       this.panY -= dy;
     }
     this.fly = null;
-    this.pauseAmbient();
+    this.stopAmbient();
     this.apply();
   }
 
@@ -512,10 +578,18 @@ export class MapEngine {
     }
     this.pins.push({
       lonlat,
-      color: kind === "correct" ? this.palette.correct : this.palette.miss,
+      kind,
       born: performance.now(),
       lines: lines?.length ? lines : undefined,
     });
+    this.dirty = true;
+  }
+
+  /** Swap the pin design; themed pins take the world's success/danger colours. */
+  setPinStyle(id: PinId, themed: boolean): void {
+    this.pinId = PIN_DESIGNS[id] ? id : DEFAULT_PIN_ID;
+    this.pinDesign = PIN_DESIGNS[this.pinId];
+    this.pinThemed = themed;
     this.dirty = true;
   }
 
@@ -702,8 +776,8 @@ export class MapEngine {
   // input
   // ------------------------------------------------------------------
 
-  private pauseAmbient(): void {
-    this.ambientPausedUntil = performance.now() + 3500;
+  private stopAmbient(): void {
+    this.ambientStopped = true;
   }
 
   private onPointerDown = (e: PointerEvent): void => {
@@ -719,14 +793,17 @@ export class MapEngine {
       const [a, b] = [...this.pointers.values()];
       this.pinchPrevDist = Math.hypot(a[0] - b[0], a[1] - b[1]);
     }
-    this.pauseAmbient();
+    this.stopAmbient();
   };
 
   private onPointerMove = (e: PointerEvent): void => {
     const prev = this.pointers.get(e.pointerId);
     if (!prev) {
       // Crosshair owns hover while keyboard aiming; don't fight it with the mouse.
-      if (this.interactive && !this.crosshairOn) this.hoverAt([e.offsetX, e.offsetY]);
+      if (this.interactive && !this.crosshairOn) {
+        if (this.regionPickOn) this.lastPointerPx = [e.offsetX, e.offsetY];
+        this.hoverAt([e.offsetX, e.offsetY]);
+      }
       return;
     }
     const cur: [number, number] = [e.offsetX, e.offsetY];
@@ -763,7 +840,7 @@ export class MapEngine {
       this.panY += dy;
     }
     this.fly = null;
-    this.pauseAmbient();
+    this.stopAmbient();
     this.apply();
   }
 
@@ -782,6 +859,7 @@ export class MapEngine {
       const px: [number, number] = [e.offsetX, e.offsetY];
       const lonlat = this.invert(px);
       if (lonlat) this.cb.onTap(lonlat, px);
+      else this.cb.onVoidTap?.();
     }
   };
 
@@ -790,6 +868,7 @@ export class MapEngine {
   };
 
   private onPointerLeave = (): void => {
+    this.lastPointerPx = null;
     if (this.crosshairOn) return;
     this.setHover(null);
   };
@@ -801,7 +880,7 @@ export class MapEngine {
     this.zoomPivot = null;
     const factor = Math.exp(-e.deltaY * 0.0022);
     this.zoomAbout(factor, [e.offsetX, e.offsetY]);
-    this.pauseAmbient();
+    this.stopAmbient();
   };
 
   private hoverAt(px: [number, number]): void {
@@ -811,13 +890,19 @@ export class MapEngine {
   }
 
   private setHover(id: number | null, country?: Country | null): void {
-    if (id === this.hoverId) return;
+    const continent =
+      this.regionPickOn && country ? continentRegion(country.props.continent) : null;
+    if (id === this.hoverId && continent === this.hoverContinent) return;
+    const continentChanged = continent !== this.hoverContinent;
     this.hoverId = id;
+    this.hoverContinent = continent;
     this.dirty = true;
     if (this.interactive) {
-      this.canvas.style.cursor = id !== null ? "pointer" : "grab";
+      const target = this.regionPickOn ? continent !== null : id !== null;
+      this.canvas.style.cursor = target ? "pointer" : "grab";
     }
     this.cb.onHover?.(country ?? null);
+    if (continentChanged) this.cb.onRegionHover?.(continent);
   }
 
   // ------------------------------------------------------------------
@@ -866,11 +951,15 @@ export class MapEngine {
     const spinning =
       this.ambient &&
       !this.reduceMotion &&
-      now > this.ambientPausedUntil &&
+      !this.ambientStopped &&
       !this.fly &&
       !this.nav.active;
     if (spinning) {
-      this.center[0] += (dt / 1000) * 3.2;
+      // Wind up from a standstill on a smoothstep, so the world leans into
+      // its turn instead of snapping to full speed the moment you arrive.
+      const t = Math.min(1, (now - this.ambientSince) / AMBIENT_SPINUP_MS);
+      const speed = AMBIENT_DEG_PER_S * t * t * (3 - 2 * t);
+      this.center[0] += (dt / 1000) * speed;
       this.apply();
     }
 
@@ -890,14 +979,15 @@ export class MapEngine {
     if (this.projType === "globe") {
       const [cx, cy] = [w / 2, h / 2];
       const r = this.baseScale * this.k;
-      // atmosphere glow
-      const glow = ctx.createRadialGradient(cx, cy, r * 0.92, cx, cy, r * 1.06);
+      // atmosphere glow — faint and wide so it reads as air, not a rim light
+      const glow = ctx.createRadialGradient(cx, cy, r * 0.9, cx, cy, r * 1.22);
       glow.addColorStop(0, withAlpha(pal.atmosphere, 0));
-      glow.addColorStop(0.75, pal.atmosphere);
+      glow.addColorStop(0.3, withAlpha(pal.atmosphere, 0.085));
+      glow.addColorStop(0.55, withAlpha(pal.atmosphere, 0.05));
       glow.addColorStop(1, withAlpha(pal.atmosphere, 0));
       ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(cx, cy, r * 1.08, 0, Math.PI * 2);
+      ctx.arc(cx, cy, r * 1.24, 0, Math.PI * 2);
       ctx.fill();
 
       const grad = ctx.createRadialGradient(cx - r * 0.25, cy - r * 0.3, r * 0.1, cx, cy, r);
@@ -934,8 +1024,14 @@ export class MapEngine {
     for (const c of this.world.countries) this.path(c.feature as GeoJSON.Feature);
     ctx.fillStyle = pal.land;
     ctx.fill();
+    // Two-pass border: a wide faint halo under a firmer line keeps the
+    // hand-drawn softness while making every border legible at a glance.
+    const borderW = Math.min(1.9, 1.05 + this.k * 0.06);
+    ctx.strokeStyle = withAlpha(pal.landBorder, 0.22);
+    ctx.lineWidth = borderW + 1.3;
+    ctx.stroke();
     ctx.strokeStyle = pal.landBorder;
-    ctx.lineWidth = Math.min(1.4, 0.7 + this.k * 0.05);
+    ctx.lineWidth = borderW;
     ctx.stroke();
 
     // discovered tint (explore mode)
@@ -950,8 +1046,33 @@ export class MapEngine {
       ctx.fill();
     }
 
+    // Menu region pick. Considering a continent and having chosen one look the
+    // same — one light, so the map doesn't change under you when the cursor
+    // leaves. The commitment reads through a rim drawn round the chosen one.
+    if (this.regionPickOn) {
+      const lit = new Set<string>();
+      if (this.pickedContinent) lit.add(this.pickedContinent);
+      if (this.hoverContinent) lit.add(this.hoverContinent);
+      if (lit.size) {
+        ctx.beginPath();
+        for (const cont of lit)
+          for (const id of this.idsForContinent(cont))
+            this.path(this.world.countries[id].feature as GeoJSON.Feature);
+        ctx.fillStyle = pal.landHover;
+        ctx.fill();
+      }
+      if (this.pickedContinent) {
+        ctx.beginPath();
+        for (const id of this.idsForContinent(this.pickedContinent))
+          this.path(this.world.countries[id].feature as GeoJSON.Feature);
+        ctx.strokeStyle = withAlpha(pal.correct, 0.8);
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+      }
+    }
+
     // hover + selected
-    if (this.hoverId !== null) {
+    if (this.hoverId !== null && !this.regionPickOn) {
       const c = this.world.countries[this.hoverId];
       ctx.beginPath();
       this.path(c.feature as GeoJSON.Feature);
@@ -1043,7 +1164,7 @@ export class MapEngine {
       if (!p) continue;
       const age = Math.min(1, (now - pin.born) / 350);
       const s = this.reduceMotion ? 1 : easeOutBack(age);
-      this.drawPin(p[0], p[1], s, pin.color);
+      this.drawPin(p[0], p[1], s, pin.kind);
     }
 
     // confetti
@@ -1129,27 +1250,15 @@ export class MapEngine {
     ctx.fillRect(-size * 0.7, -size * 0.4, size * 1.4, size * 0.8);
   }
 
-  private drawPin(x: number, y: number, scale: number, color: string): void {
+  private drawPin(x: number, y: number, scale: number, kind: Pin["kind"]): void {
     const ctx = this.ctx;
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(scale, scale);
-
-    // Simple marker: round head + short tip (tip at 0,0)
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(-6.5, -8);
-    ctx.arc(0, -11, 7, Math.PI * 0.82, Math.PI * 0.18, true);
-    ctx.closePath();
-    ctx.fillStyle = color;
-    ctx.fill();
-
-    // Foam hole — high contrast on both coral and aquamarine
-    ctx.beginPath();
-    ctx.arc(0, -11, 2.8, 0, Math.PI * 2);
-    ctx.fillStyle = this.palette.pinCore;
-    ctx.fill();
-
+    this.pinDesign.draw(
+      ctx,
+      buildPinInk(this.pinId, kind, this.pinThemed, this.themeColors)
+    );
     ctx.restore();
   }
 

@@ -1,6 +1,10 @@
+import { useRef, useState } from "react";
 import { STR } from "../content/strings";
 import type { MotionPref, ProjectionId, Settings } from "../lib/storage";
 import { Sheet } from "./Sheet";
+
+const TABS = ["view", "game", "feel", "help"] as const;
+type SettingsTab = (typeof TABS)[number];
 
 interface SettingsSheetProps {
   settings: Settings;
@@ -8,6 +12,7 @@ interface SettingsSheetProps {
   onClose: () => void;
   onReplayTutorial: () => void;
   onOpenThemes: () => void;
+  onOpenPins: () => void;
 }
 
 function Toggle({
@@ -82,114 +87,168 @@ export function SettingsSheet({
   onClose,
   onReplayTutorial,
   onOpenThemes,
+  onOpenPins,
 }: SettingsSheetProps): JSX.Element {
   const S = STR.settings;
+  const [tab, setTab] = useState<SettingsTab>("view");
+  const tabRefs = useRef<Partial<Record<SettingsTab, HTMLButtonElement | null>>>({});
+
+  // Roving tabindex per WAI-ARIA tabs: arrows move focus and select together.
+  const onTabKeyDown = (e: React.KeyboardEvent): void => {
+    const i = TABS.indexOf(tab);
+    let next: SettingsTab | undefined;
+    if (e.key === "ArrowRight") next = TABS[(i + 1) % TABS.length];
+    else if (e.key === "ArrowLeft") next = TABS[(i - 1 + TABS.length) % TABS.length];
+    else if (e.key === "Home") next = TABS[0];
+    else if (e.key === "End") next = TABS[TABS.length - 1];
+    if (!next) return;
+    e.preventDefault();
+    setTab(next);
+    tabRefs.current[next]?.focus();
+  };
+
   return (
     <Sheet title={S.title} onClose={onClose}>
-      <section className="set-group">
-        <h3>{S.groupView}</h3>
-        <Seg<ProjectionId>
-          label={S.projection}
-          value={settings.projection}
-          options={(["globe", "naturalEarth", "equalEarth", "mercator"] as ProjectionId[]).map(
-            (v) => ({ v, label: S.projections[v] })
-          )}
-          columns={2}
-          onChange={(projection) => onChange({ projection })}
-        />
-        <div className="set-row">
-          <span className="set-label">{STR.themes.settingsRow}</span>
-          <button className="btn btn-ghost" onClick={onOpenThemes}>
-            {STR.themes.names[settings.theme] ?? STR.themes.names.custom}
+      <div className="set-tabs" role="tablist" aria-label={S.tabsLabel} onKeyDown={onTabKeyDown}>
+        {TABS.map((t) => (
+          <button
+            key={t}
+            ref={(el) => {
+              tabRefs.current[t] = el;
+            }}
+            role="tab"
+            id={`set-tab-${t}`}
+            aria-selected={tab === t}
+            aria-controls={`set-panel-${t}`}
+            tabIndex={tab === t ? 0 : -1}
+            onClick={() => setTab(t)}
+          >
+            {S.tabs[t]}
           </button>
-        </div>
-        <Toggle
-          label={S.graticule}
-          sub={S.graticuleSub}
-          checked={settings.graticule}
-          onChange={(graticule) => onChange({ graticule })}
-        />
-        <Toggle
-          label={S.highContrast}
-          sub={S.highContrastSub}
-          checked={settings.highContrast}
-          onChange={(highContrast) => onChange({ highContrast })}
-        />
-        <Seg<MotionPref>
-          label={S.reduceMotion}
-          value={settings.reduceMotion}
-          options={[
-            { v: "auto", label: S.motionAuto },
-            { v: "on", label: S.motionOn },
-            { v: "off", label: S.motionOff },
-          ]}
-          onChange={(reduceMotion) => onChange({ reduceMotion })}
-        />
-      </section>
+        ))}
+      </div>
 
-      <section className="set-group">
-        <h3>{S.groupGame}</h3>
-        <Seg<5 | 10 | 20>
-          label={S.roundLength}
-          value={settings.roundLength}
-          options={[
-            { v: 5, label: "5" },
-            { v: 10, label: "10" },
-            { v: 20, label: "20" },
-          ]}
-          onChange={(roundLength) => onChange({ roundLength })}
-        />
-        <Seg<1 | 2 | 3>
-          label={S.attempts}
-          value={settings.attempts}
-          options={[
-            { v: 1, label: "1" },
-            { v: 2, label: "2" },
-            { v: 3, label: "3" },
-          ]}
-          onChange={(attempts) => onChange({ attempts })}
-        />
-        <Toggle
-          label={S.hintsEnabled}
-          checked={settings.hintsEnabled}
-          onChange={(hintsEnabled) => onChange({ hintsEnabled })}
-        />
-        <Toggle
-          label={S.speedBonus}
-          sub={S.speedBonusSub}
-          checked={settings.speedBonus}
-          onChange={(speedBonus) => onChange({ speedBonus })}
-        />
-      </section>
+      <section
+        className="set-group set-panel"
+        role="tabpanel"
+        id={`set-panel-${tab}`}
+        aria-labelledby={`set-tab-${tab}`}
+      >
+        {tab === "view" && (
+          <>
+            <Seg<ProjectionId>
+              label={S.projection}
+              value={settings.projection}
+              options={(["globe", "naturalEarth", "equalEarth", "mercator"] as ProjectionId[]).map(
+                (v) => ({ v, label: S.projections[v] })
+              )}
+              columns={2}
+              onChange={(projection) => onChange({ projection })}
+            />
+            <div className="set-row">
+              <span className="set-label">{STR.themes.settingsRow}</span>
+              <button className="btn btn-ghost" onClick={onOpenThemes}>
+                {STR.themes.names[settings.theme] ?? STR.themes.names.custom}
+              </button>
+            </div>
+            <div className="set-row">
+              <span className="set-label">{STR.pins.settingsRow}</span>
+              <button className="btn btn-ghost" onClick={onOpenPins}>
+                {STR.pins.names[settings.pin] ?? STR.pins.names.classic}
+              </button>
+            </div>
+            <Toggle
+              label={S.graticule}
+              sub={S.graticuleSub}
+              checked={settings.graticule}
+              onChange={(graticule) => onChange({ graticule })}
+            />
+            <Toggle
+              label={S.highContrast}
+              sub={S.highContrastSub}
+              checked={settings.highContrast}
+              onChange={(highContrast) => onChange({ highContrast })}
+            />
+            <Seg<MotionPref>
+              label={S.reduceMotion}
+              value={settings.reduceMotion}
+              options={[
+                { v: "auto", label: S.motionAuto },
+                { v: "on", label: S.motionOn },
+                { v: "off", label: S.motionOff },
+              ]}
+              onChange={(reduceMotion) => onChange({ reduceMotion })}
+            />
+          </>
+        )}
 
-      <section className="set-group">
-        <h3>{S.groupFeel}</h3>
-        <Toggle
-          label={S.sound}
-          checked={settings.sound}
-          onChange={(sound) => onChange({ sound })}
-        />
-        <Toggle
-          label={S.haptics}
-          sub={S.hapticsSub}
-          checked={settings.haptics}
-          onChange={(haptics) => onChange({ haptics })}
-        />
-      </section>
+        {tab === "game" && (
+          <>
+            <Seg<5 | 10 | 20>
+              label={S.roundLength}
+              value={settings.roundLength}
+              options={[
+                { v: 5, label: "5" },
+                { v: 10, label: "10" },
+                { v: 20, label: "20" },
+              ]}
+              onChange={(roundLength) => onChange({ roundLength })}
+            />
+            <Seg<1 | 2 | 3>
+              label={S.attempts}
+              value={settings.attempts}
+              options={[
+                { v: 1, label: "1" },
+                { v: 2, label: "2" },
+                { v: 3, label: "3" },
+              ]}
+              onChange={(attempts) => onChange({ attempts })}
+            />
+            <Toggle
+              label={S.hintsEnabled}
+              checked={settings.hintsEnabled}
+              onChange={(hintsEnabled) => onChange({ hintsEnabled })}
+            />
+            <Toggle
+              label={S.speedBonus}
+              sub={S.speedBonusSub}
+              checked={settings.speedBonus}
+              onChange={(speedBonus) => onChange({ speedBonus })}
+            />
+          </>
+        )}
 
-      <section className="set-group">
-        <h3>{S.groupHelp}</h3>
-        <div className="set-row">
-          <span className="set-label">
-            {S.keyboardTitle}
-            <span className="set-sub">{S.keyboardHelp}</span>
-          </span>
-        </div>
-        <div className="set-row">
-          <button className="btn btn-ghost" onClick={onReplayTutorial}>
-            {S.replayTutorial}
-          </button>
-        </div>
+        {tab === "feel" && (
+          <>
+            <Toggle
+              label={S.sound}
+              checked={settings.sound}
+              onChange={(sound) => onChange({ sound })}
+            />
+            <Toggle
+              label={S.haptics}
+              sub={S.hapticsSub}
+              checked={settings.haptics}
+              onChange={(haptics) => onChange({ haptics })}
+            />
+          </>
+        )}
+
+        {tab === "help" && (
+          <>
+            <div className="set-row">
+              <span className="set-label">
+                {S.keyboardTitle}
+                <span className="set-sub">{S.keyboardHelp}</span>
+              </span>
+            </div>
+            <div className="set-row">
+              <button className="btn btn-ghost" onClick={onReplayTutorial}>
+                {S.replayTutorial}
+              </button>
+            </div>
+          </>
+        )}
       </section>
     </Sheet>
   );

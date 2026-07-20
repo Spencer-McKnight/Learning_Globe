@@ -27,11 +27,24 @@
      Never hardcode a colour past this line: alias a token, or derive one
      with color-mix(in srgb, var(--color-*) N%, transparent). */
   --color-text-inverse: var(--color-surface-sunken); /* text on accent/success/reward fills */
+  /* wells inside panels: inputs, tracks, tiles, rows. Dark worlds sink below
+     the panel; light worlds get a lighter-than-panel well instead (set by
+     applyThemeToDom) so filled controls never read as disabled. */
+  --color-well: var(--color-surface-sunken);
   --color-focus: var(--color-success); /* keyboard focus ring */
   --color-panel: color-mix(in srgb, var(--color-surface) 92%, transparent); /* translucent blur panels */
   --color-panel-solid: var(--color-surface); /* opaque sheets */
   --color-border: color-mix(in srgb, var(--color-text-muted) 18%, transparent); /* hairlines */
   --color-scrim: color-mix(in srgb, var(--color-bg) 55%, transparent); /* backdrops + shadow tint */
+  /* pin caption ink — derived per theme by deriveCaptionInk() in themes.ts,
+     which pushes ink/halo through the contrast gates; these are the Deep
+     Blue Sea outputs for first paint. Keep in sync when deepSea changes. */
+  --color-pin-caption: #fefefe;
+  --color-pin-caption-halo: #060a18;
+  /* text that floats directly over the globe (tagline, explore link) uses the
+     same contrast-gated ink as pin captions — legible on any map ground of the
+     active theme, no halo/glow needed */
+  --color-text-onmap: var(--color-pin-caption);
 
   /* type */
   --font-display: "Baloo 2", "Nunito", system-ui, sans-serif;
@@ -59,6 +72,13 @@
   --stroke: 1.5px;
   --hud-inset: var(--sp-3);
   --hud-bottom-clearance: calc(var(--tap) * 2 + var(--sp-2) + var(--sp-3));
+
+  /* stacking scale — map floor, map-anchored labels, chrome, then sheets */
+  --z-map: 0;
+  --z-map-label: 1;
+  --z-ui: 10;
+  --z-sheet-backdrop: 100;
+  --z-sheet: 101;
 
   --shadow: 0 10px 30px var(--color-scrim);
   --ease-pop: cubic-bezier(0.2, 1.4, 0.4, 1);
@@ -140,18 +160,22 @@ input {
 .map-canvas {
   position: fixed;
   inset: 0;
+  z-index: var(--z-map);
   width: 100%;
   height: 100%;
   touch-action: none;
   display: block;
 }
 
-/* White captions nestled inside the miss indicator ring */
+/* Captions nestled inside the miss indicator ring. Two-layer cartographic
+   labels: contrast-enforced ink plus an opposite-pole halo outline (both
+   derived per theme by deriveCaptionInk in themes.ts), so the glyph edge
+   stays legible over land, ocean, and everything a pin can straddle. */
 .pin-captions {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 1;
+  z-index: var(--z-map-label);
   overflow: hidden;
 }
 
@@ -161,7 +185,13 @@ input {
   top: 0;
   text-align: center;
   will-change: transform, opacity;
-  text-shadow: 0 1px 2px color-mix(in srgb, var(--color-surface-sunken) 35%, transparent);
+  color: var(--color-pin-caption);
+  text-shadow:
+    -1px 0 0 var(--color-pin-caption-halo),
+    1px 0 0 var(--color-pin-caption-halo),
+    0 -1px 0 var(--color-pin-caption-halo),
+    0 1px 0 var(--color-pin-caption-halo),
+    0 0 3px var(--color-pin-caption-halo);
 }
 
 .pin-caption-km {
@@ -170,7 +200,6 @@ input {
   font-size: clamp(0.62rem, 2.1vw, 0.72rem);
   line-height: 1.05;
   letter-spacing: -0.01em;
-  color: var(--color-text);
 }
 
 .pin-caption-sub {
@@ -181,13 +210,13 @@ input {
   line-height: 1.1;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--color-text);
   opacity: 0.9;
 }
 
 .screen {
   position: fixed;
   inset: 0;
+  z-index: var(--z-ui);
   pointer-events: none;
   display: flex;
   flex-direction: column;
@@ -286,7 +315,7 @@ input {
 /* one centered column on wide screens; full-bleed on phones */
 .menu > * {
   width: 100%;
-  max-width: 528px;
+  max-width: 768px;
   margin-inline: auto;
 }
 
@@ -331,7 +360,8 @@ input {
 
 .tagline {
   margin: var(--sp-2) 0 0;
-  color: var(--color-text-muted);
+  color: var(--color-text-onmap);
+  font-weight: 700;
   font-size: var(--fs-md);
   max-width: 17rem;
   line-height: 1.4;
@@ -360,23 +390,13 @@ input {
   padding: 0;
 }
 
+/* the pin button — a live preview of the marker you drop on the world */
+.menu-pin {
+  padding: 0;
+}
+
 .theme-orb {
   display: block;
-}
-
-.theme-orb--spin {
-  animation: orb-drift 40s linear infinite;
-  transform-origin: 50% 50%;
-}
-
-@keyframes orb-drift {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-body.reduce-motion .theme-orb--spin {
-  animation: none;
 }
 
 /* journey — live progress pills; the best-score pill appears after a first run */
@@ -409,113 +429,218 @@ body.reduce-motion .theme-orb--spin {
   border-color: var(--color-accent);
 }
 
-/* dock — one grounded console for everything that starts a game */
+/* The menu floats over a live globe you pick continents on, so its layout
+   boxes must not swallow taps in their empty space — only the controls and
+   the text you'd want to select do. (Sheets/modals are deliberately opaque
+   to input and keep the default.) */
+
+.menu-masthead,
+.menu-corner,
+.journey,
+.dock,
+.dock-actions {
+  pointer-events: none;
+}
+
+.menu-corner > *,
+.journey > *,
+.dock-actions > *,
+.region-select {
+  pointer-events: auto;
+}
+
+/* account badge — the visible face of the guest/member boundary */
+
+.account-pill,
+.account-pill span {
+  color: var(--color-text-muted);
+}
+
+.account-pill:hover {
+  border-color: var(--color-border); /* static chip, not a button */
+}
+
+/* dock — the two starting actions float straight over the globe, no console */
 
 .dock {
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
-  padding: var(--sp-4);
-  background: var(--color-panel);
-  backdrop-filter: blur(18px);
-  border: var(--stroke) solid var(--color-border);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow), inset 0 1px 0 color-mix(in srgb, var(--color-text) 7%, transparent);
+  padding: 0;
+  background: none;
+  border: 0;
   animation: tide-up var(--dur-surface) var(--ease-tide) both;
 }
 
-.dock .label {
-  font-size: var(--fs-xs);
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-  padding-left: var(--sp-1);
+/* region choice lives on the globe itself — hover a continent, tap to pick.
+   This select is the keyboard / screen-reader path; it surfaces only on focus */
+
+.region-select {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-/* region picker — World holds the whole planet, continents sit inside it */
-
-.region-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.region-world,
-.region-tile {
+.region-select:focus-visible {
+  position: static;
+  width: 100%;
+  height: auto;
+  min-height: 46px;
+  margin: 0;
+  padding: 0 var(--sp-3);
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+  border: var(--stroke) solid var(--color-border);
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--color-surface-sunken) 45%, transparent);
-  border: var(--stroke) solid var(--color-border);
-  transition:
-    background 0.18s var(--ease-mist),
-    border-color 0.18s var(--ease-mist),
-    transform 0.15s var(--ease-pop);
-}
-
-.region-world:active,
-.region-tile:active {
-  transform: scale(0.97);
-}
-
-.region-world {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 46px;
-  padding: 0 var(--sp-4);
-}
-
-.region-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.region-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  min-height: 50px;
-  padding: var(--sp-1) var(--sp-2);
-}
-
-.region-picker .rg-name {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: var(--fs-sm);
-  line-height: 1.15;
   color: var(--color-text);
-}
-
-.region-world .rg-name {
+  font: inherit;
+  font-weight: 700;
   font-size: var(--fs-md);
 }
 
-.region-picker .rg-count {
-  font-size: var(--fs-xs);
+/* Continents wear their name: a plate pinned to the region's heart
+   (REGION_FOCUS), riding the globe as it spins and disappearing with the land
+   when it rotates round the back. Two states — a quiet preview under the
+   cursor, then a stamped, badged version once you commit. Plain map ink, no
+   outline: --color-text-onmap is contrast-gated per theme, so it carries. */
+
+.region-label-layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-map-label);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.region-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+}
+
+/* Considering and having chosen read the same — same ink, same weight — so
+   nothing shifts when the cursor moves away. The chosen plate differs only by
+   its badge and the springier arrival that earns it. */
+.region-label-plate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--color-text-onmap);
+  animation: plate-preview 0.22s var(--ease-mist) both;
+}
+
+.region-label-plate.is-chosen {
+  animation: plate-stamp 0.42s var(--ease-pop) both;
+}
+
+/* One ink, three sizes — the map is the background, not a panel. */
+.region-label-eyebrow,
+.region-label-name,
+.region-label-sub {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+}
+
+.region-label-eyebrow {
   font-weight: 700;
-  color: var(--color-text-muted);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
+  font-size: clamp(0.5rem, 1.8vw, 0.6rem);
+  line-height: 1.1;
+  letter-spacing: 0.22em;
+  /* letter-spacing pads the right edge; nudge back so it reads centred */
+  text-indent: 0.22em;
+  opacity: 0.7;
 }
 
-.region-picker .is-active {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
+.region-label-name {
+  font-weight: 800;
+  font-size: clamp(1rem, 4.6vw, 1.5rem);
+  line-height: 1.05;
+  letter-spacing: 0.15em;
+  text-indent: 0.15em;
 }
 
-.region-picker .is-active .rg-name {
+.region-label-sub {
+  font-weight: 700;
+  font-size: clamp(0.56rem, 2vw, 0.68rem);
+  line-height: 1.1;
+  letter-spacing: 0.12em;
+  text-indent: 0.12em;
+  opacity: 0.85;
+}
+
+/* the reward for committing: a small solid badge, the only colour up here */
+.region-label-badge {
+  margin-top: var(--sp-1);
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--color-success);
   color: var(--color-text-inverse);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(0.5rem, 1.8vw, 0.6rem);
+  line-height: 1.5;
+  letter-spacing: 0.16em;
+  text-indent: 0.16em;
+  text-transform: uppercase;
+  animation: badge-pop 0.34s 0.1s var(--ease-pop) both;
 }
 
-.region-picker .is-active .rg-count {
-  color: color-mix(in srgb, var(--color-text-inverse) 72%, transparent);
+@keyframes plate-preview {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes plate-stamp {
+  from {
+    opacity: 0;
+    transform: scale(1.28);
+  }
+  60% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes badge-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* primary action carries its context; explore stays quiet beneath it */
+
+.dock-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
 
 .dock-play {
   flex-direction: column;
@@ -539,12 +664,16 @@ body.reduce-motion .theme-orb--spin {
   color: color-mix(in srgb, var(--color-text-inverse) 70%, transparent);
 }
 
+/* reads as a link, not a second button — the map-safe ink keeps it legible
+   wherever the globe happens to sit behind it, no glow required */
+
 .dock-explore {
   align-self: center;
   min-height: 44px;
   padding: 0 var(--sp-4);
   font-size: var(--fs-md);
-  color: var(--color-text-muted);
+  font-weight: 700;
+  color: var(--color-text-onmap);
 }
 
 .dock-explore svg {
@@ -552,23 +681,27 @@ body.reduce-motion .theme-orb--spin {
 }
 
 .dock-explore:hover {
-  color: var(--color-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
-/* short phones: tighten the console, keep the globe breathing */
+/* wide screens: the pair stays stacked, the play button just stops stretching */
+@media (min-width: 640px) {
+  .dock-play {
+    align-self: center;
+    width: auto;
+    min-width: 320px;
+    padding: var(--sp-2) var(--sp-6);
+  }
+}
+
+/* short phones: tighten the stack, keep the globe breathing */
 @media (max-height: 720px) {
   .menu .tagline {
     display: none;
   }
   .dock {
     gap: var(--sp-2);
-    padding: var(--sp-3) var(--sp-4);
-  }
-  .region-world {
-    min-height: 40px;
-  }
-  .region-tile {
-    min-height: 42px;
   }
   .dock-play {
     min-height: 54px;
@@ -579,6 +712,7 @@ body.reduce-motion .theme-orb--spin {
 
 .hud-top {
   position: fixed;
+  z-index: var(--z-ui);
   top: max(var(--hud-inset), env(safe-area-inset-top));
   left: var(--hud-inset);
   right: var(--hud-inset);
@@ -776,6 +910,7 @@ body.reduce-motion .theme-orb--spin {
 
 .hud-bottom {
   position: fixed;
+  z-index: var(--z-ui);
   bottom: max(var(--hud-inset), env(safe-area-inset-bottom));
   left: var(--hud-inset);
   right: var(--hud-inset);
@@ -865,6 +1000,7 @@ body.reduce-motion .theme-orb--spin {
 /* hint reveal text */
 .hint-note {
   position: fixed;
+  z-index: var(--z-ui);
   bottom: calc(max(var(--hud-inset), env(safe-area-inset-bottom)) + var(--hud-bottom-clearance));
   left: 50%;
   transform: translateX(-50%);
@@ -883,6 +1019,7 @@ body.reduce-motion .theme-orb--spin {
 
 .feedback {
   position: fixed;
+  z-index: var(--z-ui);
   left: 50%;
   top: 44%;
   transform: translate(-50%, -50%);
@@ -987,6 +1124,7 @@ body.reduce-motion .theme-orb--spin {
 
 .zoom-capsule-reveal {
   position: fixed;
+  z-index: var(--z-ui);
   right: var(--hud-inset);
   bottom: calc(max(var(--hud-inset), env(safe-area-inset-bottom)) + 9.5rem);
   pointer-events: auto;
@@ -997,7 +1135,7 @@ body.reduce-motion .theme-orb--spin {
 .sheet-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: var(--z-sheet-backdrop);
   background: var(--color-scrim);
   animation: mist-in var(--dur-mist) var(--ease-mist) both;
 }
@@ -1006,7 +1144,7 @@ body.reduce-motion .theme-orb--spin {
   position: fixed;
   left: 50%;
   bottom: 0;
-  z-index: 101;
+  z-index: var(--z-sheet);
   transform: translateX(-50%);
   width: min(560px, 100%);
   max-height: 86dvh;
@@ -1054,6 +1192,37 @@ body.reduce-motion .theme-orb--spin {
 }
 
 /* ---------- settings ---------- */
+
+/* tab bar — the seg control's language, stretched into equal columns */
+.set-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--color-well);
+  border: var(--stroke) solid var(--color-border);
+  border-radius: var(--r-pill);
+  padding: 3px;
+  gap: 2px;
+  margin: 0 0 var(--sp-4);
+}
+
+.set-tabs [role="tab"] {
+  min-height: 36px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--color-text-muted);
+  transition: background 0.15s var(--ease-mist), color 0.15s var(--ease-mist);
+}
+
+.set-tabs [role="tab"][aria-selected="true"] {
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+}
+
+/* keeps the sheet from collapsing when a short tab is open */
+.set-panel {
+  min-height: 264px;
+}
 
 .set-group {
   margin: 0 0 var(--sp-5);
@@ -1107,7 +1276,7 @@ body.reduce-motion .theme-orb--spin {
 
 .seg {
   display: inline-flex;
-  background: var(--color-surface-sunken);
+  background: var(--color-well);
   border: var(--stroke) solid var(--color-border);
   border-radius: var(--r-pill);
   padding: 3px;
@@ -1162,7 +1331,7 @@ body.reduce-motion .theme-orb--spin {
   width: 56px;
   height: 32px;
   border-radius: var(--r-pill);
-  background: var(--color-surface-sunken);
+  background: var(--color-well);
   border: var(--stroke) solid var(--color-border);
   transition: background 0.2s;
   flex-shrink: 0;
@@ -1186,7 +1355,7 @@ body.reduce-motion .theme-orb--spin {
 
 .switch[aria-checked="true"]::after {
   transform: translateX(24px);
-  background: var(--color-surface-sunken);
+  background: var(--color-well);
 }
 
 /* ---------- worlds (theme picker) ---------- */
@@ -1271,7 +1440,7 @@ body.reduce-motion .theme-orb--spin {
 .theme-hex input {
   width: 8ch;
   padding: var(--sp-2) var(--sp-2);
-  background: var(--color-surface-sunken);
+  background: var(--color-well);
   border: var(--stroke) solid var(--color-border);
   border-radius: var(--r-sm);
   color: var(--color-text);
@@ -1300,6 +1469,19 @@ body.reduce-motion .theme-orb--spin {
   width: 26px;
   height: 26px;
   border: 3px solid var(--color-text);
+}
+
+/* ---------- pins (marker picker) ---------- */
+
+.pin-badge {
+  display: block;
+}
+
+/* The "match world colours" switch closes the sheet: rule above, not below. */
+.pin-themed {
+  margin-top: var(--sp-3);
+  border-top: 1px solid var(--color-border);
+  border-bottom: none;
 }
 
 /* ---------- results ---------- */
@@ -1338,7 +1520,7 @@ body.reduce-motion .theme-orb--spin {
 }
 
 .stat {
-  background: var(--color-surface-sunken);
+  background: var(--color-well);
   border: 1.5px solid var(--color-border);
   border-radius: var(--r-md);
   padding: var(--sp-3);
@@ -1395,12 +1577,113 @@ body.reduce-motion .theme-orb--spin {
 .name-row input {
   flex: 1;
   min-height: var(--tap);
-  background: var(--color-surface-sunken);
+  background: var(--color-well);
   border: 1.5px solid var(--color-border);
   border-radius: var(--r-sm);
   color: var(--color-text);
   padding: 0 var(--sp-3);
   user-select: text;
+}
+
+/* ---------- account sheet ---------- */
+
+.account-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.account-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.account-intro {
+  font-size: var(--fs-sm);
+  color: var(--color-text);
+}
+
+.account-hint {
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+}
+
+.account-label {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.text-input {
+  min-height: var(--tap);
+  background: var(--color-well);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--r-sm);
+  color: var(--color-text);
+  padding: 0 var(--sp-3);
+  user-select: text;
+}
+
+.code-input {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.5em;
+  text-align: center;
+}
+
+.account-error {
+  font-size: var(--fs-xs);
+  color: var(--color-danger, #d33);
+  text-align: center;
+}
+
+.account-links {
+  display: flex;
+  gap: var(--sp-2);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.account-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+
+.account-divider::before,
+.account-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1.5px solid var(--color-border);
+}
+
+.account-providers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.provider-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+}
+
+.account-signout {
+  margin-top: var(--sp-2);
+}
+
+/* guest-mode footnote under the save row (see AccountBadge for the boundary) */
+
+.save-note {
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+  text-align: center;
+  margin: calc(-1 * var(--sp-2)) 0 var(--sp-3);
 }
 
 /* ---------- passport ---------- */
@@ -1412,7 +1695,7 @@ body.reduce-motion .theme-orb--spin {
 .passport-progress .bar {
   height: 10px;
   border-radius: 999px;
-  background: var(--color-surface-sunken);
+  background: var(--color-well);
   border: 1px solid var(--color-border);
   overflow: hidden;
 }
@@ -1432,6 +1715,9 @@ body.reduce-motion .theme-orb--spin {
   text-align: center;
 }
 
+/* recent guesses — the profile of past pins that feeds the adaptive picker */
+
+.guess-log > h3,
 .passport-continent > h3 {
   font-size: var(--fs-xs);
   font-weight: 800;
@@ -1441,6 +1727,62 @@ body.reduce-motion .theme-orb--spin {
   margin: var(--sp-4) 0 var(--sp-2);
 }
 
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.log-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--color-well);
+  border: 1px solid var(--color-border);
+  font-size: var(--fs-sm);
+}
+
+.log-row .nm {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.log-row .log-detail {
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.log-row .log-mark {
+  font-weight: 800;
+}
+
+.log-row.is-hit .log-mark {
+  color: var(--color-success);
+}
+
+.log-row.is-reveal .log-mark {
+  color: var(--color-danger);
+}
+
+.log-row.is-skip .log-mark {
+  color: var(--color-text-muted);
+}
+
+.log-note {
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+  margin: var(--sp-2) 0 0;
+}
+
 .stamp-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
@@ -1448,7 +1790,7 @@ body.reduce-motion .theme-orb--spin {
 }
 
 .stamp {
-  background: var(--color-surface-sunken);
+  background: var(--color-well);
   border: 1.5px solid var(--color-border);
   border-radius: var(--r-md);
   padding: var(--sp-2);
@@ -1496,7 +1838,7 @@ body.reduce-motion .theme-orb--spin {
   grid-template-columns: 40px 1fr auto;
   align-items: center;
   gap: var(--sp-3);
-  background: var(--color-surface-sunken);
+  background: var(--color-well);
   border: 1.5px solid var(--color-border);
   border-radius: var(--r-md);
   padding: var(--sp-2) var(--sp-3);
@@ -1543,7 +1885,7 @@ body.reduce-motion .theme-orb--spin {
   position: fixed;
   left: 50%;
   bottom: max(var(--sp-5), env(safe-area-inset-bottom));
-  z-index: 100;
+  z-index: var(--z-sheet-backdrop);
   transform: translateX(-50%);
   width: min(480px, calc(100vw - var(--sp-5) * 2));
   background: var(--color-panel-solid);
@@ -1595,6 +1937,7 @@ body.reduce-motion .theme-orb--spin {
 
 .explore-card {
   position: fixed;
+  z-index: var(--z-ui);
   left: 50%;
   bottom: max(var(--sp-4), env(safe-area-inset-bottom));
   transform: translateX(-50%);
@@ -1630,6 +1973,7 @@ body.reduce-motion .theme-orb--spin {
 
 .explore-hint {
   position: fixed;
+  z-index: var(--z-ui);
   top: max(var(--hud-inset), env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);

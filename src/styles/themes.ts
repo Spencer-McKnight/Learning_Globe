@@ -8,11 +8,13 @@
  * Every world passes the contrast gates checked by the validation script
  * (see memory.md "Colour themes"): text/surface ≥ 7, muted/surface ≥ 4.5,
  * danger & reward on panels ≥ 4.5, accent & success ≥ 4.0, button text on
- * accent/success fills ≥ 4.5, land/ocean ≥ 2.0. Rerun the script whenever
- * a value changes. Names/descriptions live in strings.ts (STR.themes).
+ * accent/success fills ≥ 4.5, land/ocean ≥ 2.0, pin-caption halo/ink ≥ 7
+ * (deriveCaptionInk). Rerun the script whenever a value changes.
+ * Names/descriptions live in strings.ts (STR.themes).
  *
- * This file, the theme.css palette blocks, and the index.html theme-color
- * meta are the only sanctioned homes for raw colour values.
+ * This file, the theme.css palette blocks, the pin signature/accent colours
+ * in map/pins.ts, and the index.html theme-color meta are the only sanctioned
+ * homes for raw colour values.
  */
 import {
   contrast,
@@ -82,8 +84,8 @@ export const THEMES: Record<BuiltinThemeId, ThemeColors> = {
     land: "#41608a",
     landHover: "#567aa8",
     landSelected: "#418f88",
-    landBorder: "rgba(180, 205, 230, 0.5)",
-    graticule: "rgba(140, 170, 200, 0.22)",
+    landBorder: "rgba(180, 205, 230, 0.62)",
+    graticule: "rgba(140, 170, 200, 0.11)",
   },
   /** Light + calm: a vintage schoolroom wall map. The "simple" world. */
   paperAtlas: {
@@ -103,8 +105,8 @@ export const THEMES: Record<BuiltinThemeId, ThemeColors> = {
     land: "#ecdcb4",
     landHover: "#ddc48c",
     landSelected: "#86aea0",
-    landBorder: "rgba(90, 74, 44, 0.55)",
-    graticule: "rgba(90, 74, 44, 0.28)",
+    landBorder: "rgba(90, 74, 44, 0.68)",
+    graticule: "rgba(90, 74, 44, 0.14)",
   },
   /** Earthy: loam, moss, and copper under a pine-dark sea. */
   terraFirma: {
@@ -123,8 +125,8 @@ export const THEMES: Record<BuiltinThemeId, ThemeColors> = {
     land: "#83694a",
     landHover: "#9c7f5c",
     landSelected: "#92995a",
-    landBorder: "rgba(230, 210, 175, 0.5)",
-    graticule: "rgba(200, 180, 150, 0.22)",
+    landBorder: "rgba(230, 210, 175, 0.62)",
+    graticule: "rgba(200, 180, 150, 0.11)",
   },
   /** Light + fresh: new grass and clear spring sky. */
   springMeadow: {
@@ -144,8 +146,8 @@ export const THEMES: Record<BuiltinThemeId, ThemeColors> = {
     land: "#cdeaa2",
     landHover: "#a8cf6e",
     landSelected: "#76ab72",
-    landBorder: "rgba(45, 90, 60, 0.5)",
-    graticule: "rgba(45, 90, 60, 0.22)",
+    landBorder: "rgba(45, 90, 60, 0.62)",
+    graticule: "rgba(45, 90, 60, 0.11)",
   },
   /** Colour-blind friendly: Okabe-Ito blue/orange axis, luminance-coded. */
   beacon: {
@@ -164,8 +166,8 @@ export const THEMES: Record<BuiltinThemeId, ThemeColors> = {
     land: "#4c688f",
     landHover: "#6485ad",
     landSelected: "#5191c1",
-    landBorder: "rgba(190, 210, 235, 0.5)",
-    graticule: "rgba(150, 175, 205, 0.22)",
+    landBorder: "rgba(190, 210, 235, 0.62)",
+    graticule: "rgba(150, 175, 205, 0.11)",
   },
   /** Pure luminance: readable with any colour vision, including none. */
   chalkboard: {
@@ -184,8 +186,8 @@ export const THEMES: Record<BuiltinThemeId, ThemeColors> = {
     land: "#52525a",
     landHover: "#6b6b74",
     landSelected: "#8f8f99",
-    landBorder: "rgba(230, 230, 235, 0.5)",
-    graticule: "rgba(200, 200, 210, 0.2)",
+    landBorder: "rgba(230, 230, 235, 0.62)",
+    graticule: "rgba(200, 200, 210, 0.1)",
   },
   /** Eye-catching: the last minute of a warm sunset. */
   emberDusk: {
@@ -204,8 +206,8 @@ export const THEMES: Record<BuiltinThemeId, ThemeColors> = {
     land: "#96536a",
     landHover: "#b06a84",
     landSelected: "#cb7160",
-    landBorder: "rgba(255, 205, 180, 0.45)",
-    graticule: "rgba(220, 170, 160, 0.2)",
+    landBorder: "rgba(255, 205, 180, 0.58)",
+    graticule: "rgba(220, 170, 160, 0.1)",
   },
   /** Arctic night: aurora green and ice over a black polar sea. */
   auroraNight: {
@@ -224,8 +226,8 @@ export const THEMES: Record<BuiltinThemeId, ThemeColors> = {
     land: "#3a5f78",
     landHover: "#4f7994",
     landSelected: "#499e8a",
-    landBorder: "rgba(170, 220, 235, 0.5)",
-    graticule: "rgba(140, 190, 215, 0.2)",
+    landBorder: "rgba(170, 220, 235, 0.62)",
+    graticule: "rgba(140, 190, 215, 0.1)",
   },
   /** Playful: grape soda seas and bubblegum pins. */
   candyPop: {
@@ -244,8 +246,8 @@ export const THEMES: Record<BuiltinThemeId, ThemeColors> = {
     land: "#6d55a8",
     landHover: "#8a70c7",
     landSelected: "#b667b5",
-    landBorder: "rgba(225, 195, 255, 0.5)",
-    graticule: "rgba(190, 160, 230, 0.22)",
+    landBorder: "rgba(225, 195, 255, 0.62)",
+    graticule: "rgba(190, 160, 230, 0.11)",
   },
 };
 
@@ -328,8 +330,8 @@ export function deriveCustomTheme(seed: string): ThemeColors {
     land,
     landHover: hslToHex(h, 26, 50),
     landSelected: mix(land, accent, 0.5),
-    landBorder: withAlpha(hslToHex(h, 40, 82), 0.5),
-    graticule: withAlpha(hslToHex(h, 30, 70), 0.22),
+    landBorder: withAlpha(hslToHex(h, 40, 84), 0.62),
+    graticule: withAlpha(hslToHex(h, 30, 70), 0.11),
   };
 }
 
@@ -377,9 +379,62 @@ export function buildMapPalette(c: ThemeColors, highContrast: boolean): MapPalet
     land: landLighter ? tint(c.land, 0.3) : mix(c.land, inkLight, 0.26),
     landHover: landLighter ? shade(c.land, 0.18) : mix(c.land, inkLight, 0.45),
     landBorder: withAlpha(inkDark, 0.9),
-    graticule: withAlpha(landLighter ? inkDark : inkLight, 0.25),
+    graticule: withAlpha(landLighter ? inkDark : inkLight, 0.12),
     starAlpha: 0,
   };
+}
+
+/* ---------------- pin caption ink ---------------- */
+
+/** Contrast the caption ink aims for on every map ground it can sit over. */
+const CAPTION_INK_MIN = 4.5;
+/** The halo must always read as an edge against the ink itself. */
+const CAPTION_HALO_MIN = 7;
+
+/**
+ * Ink + halo for the captions nestled under guess pins. No single colour can
+ * clear WCAG on both mid-tone land and dark ocean, so the caption is
+ * two-layer, like cartographic map labels: ink seeded from whichever of
+ * text/bg survives the worst ground better, pushed toward its pole until
+ * every ground clears CAPTION_INK_MIN (or the pole is reached), plus an
+ * opposite-pole halo that outlines the glyphs wherever the ink alone falls
+ * short. Grounds include the high-contrast palette's land/ocean so the
+ * toggle needs no separate caption override. The ink also feeds
+ * --color-text-onmap (aliased in theme.css) for any UI text that floats
+ * directly over the globe (masthead tagline, explore link).
+ */
+export function deriveCaptionInk(c: ThemeColors): { ink: string; halo: string } {
+  const hc = buildMapPalette(c, true);
+  const grounds = [
+    c.land,
+    c.landHover,
+    c.landSelected,
+    c.ocean,
+    c.oceanCenter,
+    hc.land,
+    hc.landHover,
+    hc.ocean,
+  ];
+  const worst = (fg: string): number => Math.min(...grounds.map((g) => contrast(fg, g)));
+
+  const fromText = worst(c.text) >= worst(c.bg);
+  let ink = fromText ? c.text : c.bg;
+  let halo = fromText ? c.bg : c.text;
+  const inkIsLight = luminance(ink) >= luminance(halo);
+  const push = (col: string, towardWhite: boolean): string =>
+    towardWhite ? tint(col, 0.4) : shade(col, 0.4);
+
+  for (let i = 0; i < 12 && worst(ink) < CAPTION_INK_MIN; i++) {
+    const next = push(ink, inkIsLight);
+    if (next === ink) break;
+    ink = next;
+  }
+  for (let i = 0; i < 12 && contrast(halo, ink) < CAPTION_HALO_MIN; i++) {
+    const next = push(halo, !inkIsLight);
+    if (next === halo) break;
+    halo = next;
+  }
+  return { ink, halo };
 }
 
 export function buildConfetti(c: ThemeColors): ConfettiSet {
@@ -422,8 +477,16 @@ export function applyThemeToDom(c: ThemeColors): void {
   const root = document.documentElement;
   const vars: Record<string, string> = {};
   for (const [key, cssVar] of Object.entries(CSS_VAR_OF)) {
-    const value = c[key as keyof ThemeColors] as string;
-    vars[cssVar] = value;
+    vars[cssVar] = c[key as keyof ThemeColors] as string;
+  }
+  const caption = deriveCaptionInk(c);
+  vars["--color-pin-caption"] = caption.ink;
+  vars["--color-pin-caption-halo"] = caption.halo;
+  // Wells (inputs, tracks, tiles): dark worlds sink below the panel; light
+  // worlds instead rise above it toward white — a darker fill on a light
+  // panel reads as a disabled control.
+  vars["--color-well"] = c.light ? tint(c.surface, 0.6) : c.surfaceSunken;
+  for (const [cssVar, value] of Object.entries(vars)) {
     root.style.setProperty(cssVar, value);
   }
   root.style.colorScheme = c.light ? "light" : "dark";

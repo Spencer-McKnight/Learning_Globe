@@ -12,63 +12,29 @@ import {
 import { Sheet } from "./Sheet";
 
 /**
- * A miniature planet painted in a world's colours — ocean gradient, two
- * continents, one accent-selected island, and a correct-pin dot, so every
- * swatch previews exactly what the real globe will look like.
+ * A world's colours as a plain sphere — ocean gradient lit from the top left,
+ * the land colour rising from the lower right like a second light, and an
+ * accent rim. No continents or wireframe; just the palette.
  */
-export function ThemeOrb({
-  c,
-  size = 52,
-  spin = false,
-}: {
-  c: ThemeColors;
-  size?: number;
-  spin?: boolean;
-}): JSX.Element {
+export function ThemeOrb({ c, size = 52 }: { c: ThemeColors; size?: number }): JSX.Element {
   const uid = useId();
-  const gradId = `orb-sea-${uid}`;
-  const clipId = `orb-clip-${uid}`;
+  const seaId = `orb-sea-${uid}`;
+  const landId = `orb-land-${uid}`;
   return (
-    <svg
-      viewBox="0 0 64 64"
-      width={size}
-      height={size}
-      aria-hidden="true"
-      className={spin ? "theme-orb theme-orb--spin" : "theme-orb"}
-    >
+    <svg viewBox="0 0 64 64" width={size} height={size} aria-hidden="true" className="theme-orb">
       <defs>
-        <radialGradient id={gradId} cx="38%" cy="34%" r="75%">
+        <radialGradient id={seaId} cx="38%" cy="34%" r="75%">
           <stop offset="0%" stopColor={c.oceanCenter} />
           <stop offset="100%" stopColor={c.ocean} />
         </radialGradient>
-        <clipPath id={clipId}>
-          <circle cx="32" cy="32" r="29" />
-        </clipPath>
+        <radialGradient id={landId} cx="72%" cy="80%" r="70%">
+          <stop offset="0%" stopColor={withAlpha(c.land, 0.85)} />
+          <stop offset="100%" stopColor={withAlpha(c.land, 0)} />
+        </radialGradient>
       </defs>
-      <circle cx="32" cy="32" r="30.5" fill="none" stroke={withAlpha(c.success, 0.45)} strokeWidth="1.6" />
-      <circle cx="32" cy="32" r="29" fill={`url(#${gradId})`} />
-      <g clipPath={`url(#${clipId})`}>
-        <path
-          d="M8 31 Q11 17 25 19 Q37 21 34 31 Q31 43 19 43 Q8 42 8 31 Z"
-          fill={c.land}
-          stroke={c.landBorder}
-          strokeWidth="1"
-        />
-        <path
-          d="M40 12 Q52 10 54 21 Q55 31 45 29 Q37 27 40 12 Z"
-          fill={c.land}
-          stroke={c.landBorder}
-          strokeWidth="1"
-        />
-        <ellipse cx="45" cy="47" rx="8" ry="5.5" fill={c.landSelected} stroke={c.landBorder} strokeWidth="1" />
-        <path
-          d="M4 40 Q32 48 60 40"
-          fill="none"
-          stroke={c.graticule}
-          strokeWidth="1"
-        />
-      </g>
-      <circle cx="24" cy="29" r="3" fill={c.success} stroke={c.text} strokeWidth="1.2" />
+      <circle cx="32" cy="32" r="30" fill="none" stroke={withAlpha(c.accent, 0.9)} strokeWidth="2" />
+      <circle cx="32" cy="32" r="28" fill={`url(#${seaId})`} />
+      <circle cx="32" cy="32" r="28" fill={`url(#${landId})`} />
     </svg>
   );
 }

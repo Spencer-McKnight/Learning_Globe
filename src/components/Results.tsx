@@ -2,12 +2,17 @@ import { useState } from "react";
 import { STR } from "../content/strings";
 import type { GameState } from "../game/reducer";
 import { formatPoints } from "../game/scoring";
+import type { Account } from "../lib/account";
+import type { BoardRanks } from "../lib/cloud";
 import type { World } from "../lib/geo";
 import { flagEmoji } from "../lib/geo";
 
 interface ResultsProps {
   gs: GameState;
   world: World;
+  account: Account;
+  /** Global board placement, once the cloud confirms the run. */
+  ranks: BoardRanks | null;
   isPersonalBest: boolean;
   defaultName: string;
   onSave: (name: string) => void;
@@ -18,6 +23,8 @@ interface ResultsProps {
 
 export function Results({
   gs,
+  account,
+  ranks,
   isPersonalBest,
   defaultName,
   onSave,
@@ -75,18 +82,29 @@ export function Results({
           )}
 
           {!saved ? (
-            <div className="name-row">
-              <input
-                value={name}
-                maxLength={20}
-                placeholder={STR.results.namePlaceholder}
-                aria-label={STR.results.savePrompt}
-                onChange={(e) => setName(e.target.value)}
-              />
-              <button className="btn btn-ghost" onClick={() => onSave(name.trim())}>
-                {STR.results.save}
-              </button>
-            </div>
+            <>
+              <div className="name-row">
+                <input
+                  value={name}
+                  maxLength={20}
+                  placeholder={STR.results.namePlaceholder}
+                  aria-label={STR.results.savePrompt}
+                  onChange={(e) => setName(e.target.value)}
+                />
+                <button className="btn btn-ghost" onClick={() => onSave(name.trim())}>
+                  {STR.results.save}
+                </button>
+              </div>
+              {account.kind === "guest" ? (
+                <p className="save-note">{STR.account.guestScoreNote}</p>
+              ) : (
+                <p className="save-note" role="status">
+                  {ranks?.weekly
+                    ? STR.results.globalWeekly(ranks.weekly.toLocaleString())
+                    : STR.results.syncedNote}
+                </p>
+              )}
+            </>
           ) : (
             <p className="empty-note" style={{ padding: "0 0 12px" }} role="status">
               {STR.results.saved}

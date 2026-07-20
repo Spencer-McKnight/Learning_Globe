@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
-import type { Country, LonLat, World } from "../lib/geo";
+import type { Country, LonLat, Region, World } from "../lib/geo";
 import type { ProjectionId } from "../lib/storage";
 import { INDICATOR_RING_R, MapEngine } from "../map/MapEngine";
+import type { PinId } from "../map/pins";
 import type { ThemeColors } from "../styles/themes";
 import { STR } from "../content/strings";
 
@@ -12,16 +13,37 @@ interface MapViewProps {
   projection: ProjectionId;
   graticule: boolean;
   themeColors: ThemeColors;
+  pin: PinId;
+  pinThemed: boolean;
   highContrast: boolean;
   reduceMotion: boolean;
   interactive: boolean;
   ambient: boolean;
+  /** Name plate pinned to a place on the map (the menu's chosen continent). */
+  regionLabel?: RegionLabel | null;
   onTap: (lonlat: LonLat, screen: [number, number]) => void;
+  onVoidTap?: () => void;
   onHover?: (c: Country | null) => void;
+  onRegionHover?: (r: Region | null) => void;
   onInteract?: () => void;
+  /** Fires whenever a fresh engine is live, so owners can re-push their modes. */
+  onEngineReady?: () => void;
 }
 
-/** Sync white captions into the indicator ring as the globe moves. */
+export interface RegionLabel {
+  /** Re-keys the plate so it replays its arrival animation on a new pick. */
+  id: string;
+  eyebrow: string;
+  name: string;
+  sub: string;
+  at: LonLat;
+  /** Chosen (stamped, lit) versus merely under the cursor (quiet preview). */
+  chosen: boolean;
+  /** Badge text for the chosen state. */
+  chosenLabel: string;
+}
+
+/** Sync haloed caption labels into the indicator ring as the globe moves. */
 function syncPinCaptions(engine: MapEngine, root: HTMLDivElement, reduceMotion: boolean): void {
   const captions = engine.pinCaptions();
   const now = performance.now();
@@ -82,15 +104,43 @@ function syncPinCaptions(engine: MapEngine, root: HTMLDivElement, reduceMotion: 
   }
 }
 
+/**
+ * Ride the name plate on its anchor point, and let the globe's own curve hide
+ * it: `screenOf` returns null once the anchor rotates round the back.
+ */
+function syncRegionLabel(
+  engine: MapEngine,
+  el: HTMLDivElement | null,
+  at: LonLat | null
+): void {
+  if (!el) return;
+  const screen = at ? engine.screenOf(at) : null;
+  if (!screen) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.style.transform = `translate(${screen[0]}px, ${screen[1]}px) translate(-50%, -50%)`;
+}
+
 export function MapView(props: MapViewProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const captionsRef = useRef<HTMLDivElement>(null);
   const tapRef = useRef(props.onTap);
+  const voidTapRef = useRef(props.onVoidTap);
   const hoverRef = useRef(props.onHover);
+  const regionHoverRef = useRef(props.onRegionHover);
   const interactRef = useRef(props.onInteract);
+  const readyRef = useRef(props.onEngineReady);
+  const regionLabelRef = useRef<HTMLDivElement>(null);
+  const labelAtRef = useRef(props.regionLabel?.at ?? null);
   tapRef.current = props.onTap;
+  voidTapRef.current = props.onVoidTap;
   hoverRef.current = props.onHover;
+  regionHoverRef.current = props.onRegionHover;
   interactRef.current = props.onInteract;
+  readyRef.current = props.onEngineReady;
+  labelAtRef.current = props.regionLabel?.at ?? null;
 
   const { world, engineRef } = props;
 
@@ -99,13 +149,19 @@ export function MapView(props: MapViewProps): JSX.Element {
     if (!canvas) return;
     const engine = new MapEngine(canvas, world, {
       onTap: (ll, px) => tapRef.current(ll, px),
+      onVoidTap: () => voidTapRef.current?.(),
       onHover: (c) => hoverRef.current?.(c),
+      onRegionHover: (r) => regionHoverRef.current?.(r),
       onInteract: () => interactRef.current?.(),
     });
     engineRef.current = engine;
     if (import.meta.env.DEV) {
       (window as unknown as { __lgEngine?: MapEngine }).__lgEngine = engine;
     }
+    // A new engine starts with default modes; the owner's mode effects have
+    // already run against the old one (React 18 remounts this in dev), so ask
+    // for them again rather than landing on the menu with play-mode hover.
+    readyRef.current?.();
     return () => {
       engine.destroy();
       engineRef.current = null;
@@ -121,6 +177,9 @@ export function MapView(props: MapViewProps): JSX.Element {
   useEffect(() => {
     engineRef.current?.setTheme(props.themeColors);
   }, [props.themeColors, engineRef]);
+  useEffect(() => {
+    engineRef.current?.setPinStyle(props.pin, props.pinThemed);
+  }, [props.pin, props.pinThemed, engineRef]);
   useEffect(() => {
     engineRef.current?.setHighContrast(props.highContrast);
   }, [props.highContrast, engineRef]);
@@ -140,6 +199,7 @@ export function MapView(props: MapViewProps): JSX.Element {
       const engine = engineRef.current;
       const root = captionsRef.current;
       if (engine && root) syncPinCaptions(engine, root, props.reduceMotion);
+      if (engine) syncRegionLabel(engine, regionLabelRef.current, labelAtRef.current);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -150,6 +210,23 @@ export function MapView(props: MapViewProps): JSX.Element {
     <>
       <canvas ref={canvasRef} className="map-canvas" role="img" aria-label={STR.a11y.map} />
       <div ref={captionsRef} className="pin-captions" aria-hidden="true" />
+      {props.regionLabel && (
+        <div className="region-label-layer" aria-hidden="true">
+          <div ref={regionLabelRef} className="region-label" hidden>
+            <div
+              className={`region-label-plate${props.regionLabel.chosen ? " is-chosen" : ""}`}
+              key={props.regionLabel.id}
+            >
+              <span className="region-label-eyebrow">{props.regionLabel.eyebrow}</span>
+              <span className="region-label-name">{props.regionLabel.name}</span>
+              <span className="region-label-sub">{props.regionLabel.sub}</span>
+              {props.regionLabel.chosen && (
+                <span className="region-label-badge">{props.regionLabel.chosenLabel}</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -4,14 +4,16 @@
  */
 
 export const STR = {
-  appName: "Learning Globe",
-  eyebrow: "Learning",
-  wordmark: "Globe",
+  appName: "learnthe.world",
+  eyebrow: "Learn the",
+  wordmark: "World",
   tagline: "Spin the world. Pin your guess. Discover every country.",
 
   menu: {
     play: "Play",
-    playContext: (region: string, n: number) => `${region} · ${n} countries`,
+    /** Just where you're playing — the continent plate on the globe carries
+        the country count, and the round length belongs in Settings. */
+    playContext: (region: string) => region,
     explore: "Explore the map",
     passport: "Passport",
     leaderboard: "High scores",
@@ -21,11 +23,51 @@ export const STR = {
     worldAll: (n: number) => `All ${n} countries`,
     count: (n: number) => n.toLocaleString(),
     regionTile: (name: string, n: number) => `${name}, ${n} countries`,
+    regionChosen: (name: string) => `Region set to ${name}.`,
+    regionPlateEyebrow: "Continent",
+    regionPlateChosen: "Selected",
+    regionPlateSub: (n: number) => `${n} countries`,
     journeyPassport: (found: number, total: number) => `${found} / ${total}`,
     journeyPassportLabel: (found: number, total: number) =>
       `Passport: ${found} of ${total} countries discovered`,
     journeyBestLabel: (score: string) =>
       `High scores: personal best ${score} points`,
+  },
+
+  account: {
+    guest: "Guest",
+    guestSub: "Playing as a guest — progress is saved on this device.",
+    memberSub: "Signed in — progress syncs to your account.",
+    guestScoreNote: "Guest scores stay on this device.",
+    openLabel: "Account — sign in or manage your profile",
+    sheetTitle: "Your account",
+    signInTitle: "Sign in",
+    signInIntro:
+      "Create a free account to keep your passport and scores with you on any device.",
+    emailLabel: "Email address",
+    emailPlaceholder: "you@example.com",
+    sendCode: "Email me a sign-in code",
+    sending: "Sending…",
+    codeSentTo: (email: string) => `We sent a sign-in email to ${email}.`,
+    codeSentHint: "Tap the link in the email, or enter the 6-digit code below.",
+    codeLabel: "6-digit code",
+    verify: "Sign in",
+    verifying: "Checking…",
+    resend: "Send a new code",
+    useDifferentEmail: "Use a different email",
+    orContinueWith: "Or continue with",
+    providerGoogle: "Google",
+    providerGitHub: "GitHub",
+    providerApple: "Apple",
+    providerError:
+      "That sign-in method isn't switched on yet — try the email code instead.",
+    genericError: "Something went wrong. Please try again.",
+    signedInAs: (email: string) => `Signed in as ${email}`,
+    displayNameLabel: "Display name",
+    displayNameSave: "Save name",
+    displayNameSaved: "Saved!",
+    signOut: "Sign out",
+    signedIn: "You're signed in!",
   },
 
   regions: {
@@ -103,6 +145,8 @@ export const STR = {
     save: "Save score",
     saved: "Saved to high scores!",
     newBest: "New personal best!",
+    syncedNote: "Score synced to the global leaderboard.",
+    globalWeekly: (rank: string) => `#${rank} on this week's global board`,
   },
 
   passport: {
@@ -110,18 +154,42 @@ export const STR = {
     progress: (found: number, total: number) => `${found} of ${total} countries discovered`,
     locked: "Not discovered yet",
     hintText: "Guess a country correctly for the first time to stamp it here.",
+    recentTitle: "Recent guesses",
+    recentNote:
+      "Rounds gently favour places you haven't met yet — and the ones that got away.",
+    logHit: "Got it",
+    logHitIn: (n: number) => `Got it in ${n}`,
+    logHints: (n: number) => (n === 1 ? "1 hint" : `${n} hints`),
+    logReveal: "Got away",
+    logSkip: "Skipped",
   },
 
   leaderboard: {
     title: "High scores",
     empty: "No scores yet — play a round and make history!",
     meta: (region: string, date: string) => `${region} · ${date}`,
+    tabDevice: "This device",
+    tabGlobal: "Global",
+    boardAlltime: "All-time",
+    boardWeekly: "This week",
+    globalMeta: (correct: number, rounds: number) => `${correct}/${rounds} correct`,
+    loading: "Loading scores…",
+    loadError: "Couldn't reach the global board — check your connection.",
+    globalEmpty: "No global scores here yet — be the first!",
+    yourRank: (rank: string) => `Your rank: #${rank}`,
+    signInPrompt: "Sign in to appear on the global board.",
   },
 
   settings: {
     title: "Settings",
     close: "Close",
-    groupView: "Map & view",
+    tabsLabel: "Settings sections",
+    tabs: {
+      view: "View",
+      game: "Game",
+      feel: "Sound",
+      help: "Help",
+    },
     projection: "Map style",
     projections: {
       globe: "3D Globe",
@@ -133,13 +201,11 @@ export const STR = {
     graticuleSub: "Latitude and longitude lines",
     highContrast: "High contrast",
     highContrastSub: "Brighter land and stronger borders",
-    groupGame: "Game rules",
     roundLength: "Countries per round",
     attempts: "Tries per country",
     hintsEnabled: "Allow hints",
     speedBonus: "Speed bonus",
     speedBonusSub: "Extra points for fast answers",
-    groupFeel: "Sound & feel",
     sound: "Sound effects",
     haptics: "Vibration",
     hapticsSub: "On supported phones",
@@ -148,7 +214,6 @@ export const STR = {
     motionAuto: "Auto",
     motionOn: "On",
     motionOff: "Off",
-    groupHelp: "Help",
     replayTutorial: "Show the tour again",
     keyboardTitle: "Keyboard controls",
     keyboardHelp:
@@ -194,6 +259,37 @@ export const STR = {
       custom: "Grown from your colour. Feedback stays coral and gold.",
     } as Record<string, string>,
     applied: (name: string) => `World changed to ${name}.`,
+  },
+
+  pins: {
+    title: "Pins",
+    intro: "Pick the marker you drop on the world. Same aim, new landing.",
+    openLabel: "Change pin style",
+    settingsRow: "Pin style",
+    groupLabel: "Choose a pin",
+    themedLabel: "Match world colours",
+    themedSub: "Paint your pin with this world's palette",
+    names: {
+      classic: "Classic",
+      pushpin: "Push pin",
+      star: "Gold star",
+      pennant: "Pennant",
+      balloon: "Balloon",
+      dart: "Dart",
+      rocket: "Rocket",
+      sprout: "Sprout",
+    } as Record<string, string>,
+    descriptions: {
+      classic: "The trusty teardrop. Symmetry never misses.",
+      pushpin: "A glossy head on a slim steel needle — corkboard classic.",
+      star: "A gold star for map star students.",
+      pennant: "Plant your flag like a true explorer.",
+      balloon: "A little balloon bobs where you guessed.",
+      dart: "Thrown from across the room. Bullseye pending.",
+      rocket: "Touchdown confirmed — the eagle has landed.",
+      sprout: "Right answers grow. Wrong ones wilt.",
+    } as Record<string, string>,
+    applied: (name: string) => `Pin changed to ${name}.`,
   },
 
   tutorial: {

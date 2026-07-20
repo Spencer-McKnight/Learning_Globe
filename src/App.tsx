@@ -1,21 +1,33 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { AccountSheet } from "./components/AccountSheet";
 import { ExploreCard } from "./components/ExploreCard";
 import { Hud } from "./components/Hud";
 import { LeaderboardSheet } from "./components/LeaderboardSheet";
 import { MapView } from "./components/MapView";
 import { Menu } from "./components/Menu";
 import { PassportSheet } from "./components/PassportSheet";
+import { PinSheet } from "./components/PinSheet";
 import { Results } from "./components/Results";
 import { SettingsSheet } from "./components/SettingsSheet";
 import { Sheet } from "./components/Sheet";
 import { ThemeSheet } from "./components/ThemeSheet";
 import { Tutorial } from "./components/Tutorial";
 import { STR } from "./content/strings";
-import { IDLE_GAME, gameReducer, shuffle } from "./game/reducer";
+import { IDLE_GAME, gameReducer, type GuessOutcome } from "./game/reducer";
 import { DISCOVERY_BONUS, formatPoints, scoreGuess } from "./game/scoring";
+import { pickRunPool } from "./game/selection";
+import type { Account } from "./lib/account";
 import * as sfx from "./lib/audio";
 import {
+  bootMemberSync,
+  pushSettings,
+  submitRun,
+  type BoardRanks,
+  type RunGuess,
+} from "./lib/cloud";
+import {
   compassDirection,
+  continentRegion,
   distanceKm,
   formatKm,
   formatPopulation,
@@ -30,25 +42,33 @@ import {
   type World,
 } from "./lib/geo";
 import {
+  adoptCloudSettings,
+  loadHistory,
   loadLeaderboard,
+  mergeCloudStats,
+  mergePassport,
   loadPassport,
   loadSettings,
   loadStats,
   markTutorialSeen,
+  recordGuess,
   recordRun,
   saveLeaderboardEntry,
   saveSettings,
+  settingsSavedAt,
   stampPassport,
   tutorialSeen,
+  type GuessRecord,
   type LeaderboardEntry,
   type Settings,
 } from "./lib/storage";
 import type { ArrowDir, ZoomDir } from "./map/InteractionController";
 import type { MapEngine } from "./map/MapEngine";
+import type { PinId } from "./map/pins";
 import { applyThemeToDom, resolveThemeColors, type ThemeId } from "./styles/themes";
 
 type ScreenId = "menu" | "game" | "results" | "explore";
-type OverlayId = null | "settings" | "passport" | "leaderboard" | "theme";
+type OverlayId = null | "settings" | "passport" | "leaderboard" | "theme" | "pin" | "account";
 
 const ARROW_KEYS: Record<string, ArrowDir> = {
   ArrowLeft: "left",
@@ -90,10 +110,12 @@ const REVEAL_MS = 3000;
 /** Persistent glow while the player studies the revealed country. */
 const REVEAL_FLASH_MS = Number.POSITIVE_INFINITY;
 
-export default function App(): JSX.Element {
+export default function App({ account }: { account: Account }): JSX.Element {
+  // Supplied by the auth root (main.tsx); every guest/member branch keys off this.
   const [world, setWorld] = useState<World | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [settings, setSettings] = useState<Settings>(loadSettings);
+  const [history, setHistory] = useState<GuessRecord[]>(loadHistory);
   const [runRules, setRunRules] = useState<MatchRules>(() => pickMatchRules(loadSettings()));
   const [screen, setScreen] = useState<ScreenId>("menu");
   const [overlay, setOverlay] = useState<OverlayId>(null);
@@ -103,10 +125,18 @@ export default function App(): JSX.Element {
   const [passport, setPassport] = useState(loadPassport);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(loadLeaderboard);
   const [exploreSel, setExploreSel] = useState<Country | null>(null);
+  /** Menu only: the region under the cursor, previewed before it's picked. */
+  const [hoverRegion, setHoverRegion] = useState<Region | null>(null);
+  /** Counts commitments, so the plate stamps on a pick and not on re-hover. */
+  const [pickSeq, setPickSeq] = useState(0);
   const [keyboardNav, setKeyboardNav] = useState(false);
   const [announce, setAnnounce] = useState("");
   const [savedScore, setSavedScore] = useState(false);
   const [personalBest, setPersonalBest] = useState(false);
+  /** Global board placement returned by the cloud after a member's run. */
+  const [runRanks, setRunRanks] = useState<BoardRanks | null>(null);
+  /** Bumped whenever MapView hands us a freshly built engine to configure. */
+  const [engineEpoch, setEngineEpoch] = useState(0);
   const [osReducedMotion, setOsReducedMotion] = useState(
     () => window.matchMedia("(prefers-reduced-motion: reduce)").matches
   );
@@ -119,6 +149,11 @@ export default function App(): JSX.Element {
   const revealCounting = useRef(false);
   const pendingPlay = useRef(false);
   const recorded = useRef(true);
+  /** Client-side run identity + per-prompt log, for the one submit_run RPC. */
+  const runId = useRef("");
+  const runLog = useRef<RunGuess[]>([]);
+  /** Countries wrongly pinned during the current prompt — the confusion signal. */
+  const misfires = useRef<string[]>([]);
   /** 1 → 0 while the reveal auto-advance countdown is running; null when paused/idle. */
   const [revealRemain, setRevealRemain] = useState<number | null>(null);
 
@@ -142,6 +177,12 @@ export default function App(): JSX.Element {
     setAnnounce(STR.themes.applied(STR.themes.names[theme]));
   };
 
+  const selectPin = (pin: PinId): void => {
+    sfx.sfxTap();
+    setSettings((s) => ({ ...s, pin }));
+    setAnnounce(STR.pins.applied(STR.pins.names[pin]));
+  };
+
   // ---------------- boot ----------------
 
   useEffect(() => {
@@ -155,12 +196,45 @@ export default function App(): JSX.Element {
     return () => mq.removeEventListener("change", fn);
   }, []);
 
+  // Persist settings only after a real change — the initial render must not
+  // advance the local last-write-wins clock, or cloud settings from another
+  // device would never be adopted.
+  const settingsBooted = useRef(false);
   useEffect(() => {
-    saveSettings(settings);
     sfx.setSound(settings.sound);
     sfx.setHaptics(settings.haptics);
     document.body.classList.toggle("hc", settings.highContrast);
+    if (!settingsBooted.current) {
+      settingsBooted.current = true;
+      return;
+    }
+    saveSettings(settings);
+    if (account.kind === "member") {
+      const t = window.setTimeout(() => void pushSettings(settings), 1500);
+      return () => window.clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings]);
+
+  // Member boot: replay the guest bucket once, flush runs queued offline,
+  // then fold the cloud snapshot into this device's bucket.
+  useEffect(() => {
+    if (account.kind !== "member") return;
+    let cancelled = false;
+    void bootMemberSync().then((snap) => {
+      if (!snap || cancelled) return;
+      setPassport(mergePassport(snap.passport));
+      if (snap.stats) mergeCloudStats(snap.stats);
+      if (snap.settings && snap.settingsUpdatedAt > settingsSavedAt()) {
+        adoptCloudSettings(snap.settings, snap.settingsUpdatedAt);
+        setSettings(loadSettings()); // re-read: merges cloud JSON over defaults
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     document.body.classList.toggle("reduce-motion", reduceMotion);
@@ -168,8 +242,12 @@ export default function App(): JSX.Element {
 
   // ---------------- engine mode sync ----------------
 
+  // The menu globe is live too: hover lights continents, taps pick regions.
+  const menuLive = screen === "menu" && !overlay && !tutorialActive;
   const interactive =
-    (screen === "game" && !paused && !overlay && !settingsApplyPrompt) || screen === "explore";
+    (screen === "game" && !paused && !overlay && !settingsApplyPrompt) ||
+    screen === "explore" ||
+    menuLive;
   const ambient = screen === "menu" || screen === "results";
 
   useEffect(() => {
@@ -181,11 +259,20 @@ export default function App(): JSX.Element {
     if (screen !== "explore") {
       e.setSelected(null);
     }
-  }, [screen, passport, world]);
+  }, [screen, passport, world, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.setCrosshair(keyboardNav && (screen === "game" || screen === "explore"));
-  }, [keyboardNav, screen]);
+  }, [keyboardNav, screen, engineEpoch]);
+
+  useEffect(() => {
+    const e = engineRef.current;
+    if (!e) return;
+    e.setRegionPick(screen === "menu");
+    e.setPickedContinent(
+      screen === "menu" && settings.region !== "World" ? settings.region : null
+    );
+  }, [screen, settings.region, world, engineEpoch]);
 
   useEffect(() => {
     const cancel = (): void => {
@@ -275,11 +362,13 @@ export default function App(): JSX.Element {
     if (!world) return;
     stopRevealCountdown();
     const rules = pickMatchRules(settings);
-    const pool = shuffle(regionPool(world, rules.region))
-      .slice(0, rules.roundLength)
-      .map((c) => c.id);
+    const pool = pickRunPool(regionPool(world, rules.region), history, rules.roundLength);
     if (pool.length === 0) return;
     recorded.current = false;
+    runId.current = crypto.randomUUID();
+    runLog.current = [];
+    misfires.current = [];
+    setRunRanks(null);
     setSavedScore(false);
     setPersonalBest(false);
     setPaused(false);
@@ -318,7 +407,10 @@ export default function App(): JSX.Element {
     sfx.unlockAudio();
     sfx.sfxTap();
     updateSettings({ region });
-    engineRef.current?.flyTo(REGION_FOCUS[region], { dur: 1100 });
+    setPickSeq((n) => n + 1);
+    setAnnounce(STR.menu.regionChosen(STR.regions[region]));
+    // World has no heart to fly to — stay wherever the player is looking.
+    if (region !== "World") engineRef.current?.flyTo(REGION_FOCUS[region], { dur: 1100 });
   };
 
   const onPlay = (): void => {
@@ -350,6 +442,37 @@ export default function App(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen, gs.index, gs.phase === "prompt", world]);
 
+  // journal each finished prompt into the profile of past guesses
+  const journaled = useRef<GuessOutcome | null>(null);
+  useEffect(() => {
+    if (!world || !gs.outcome || gs.outcome === journaled.current) return;
+    journaled.current = gs.outcome;
+    const miss = misfires.current;
+    misfires.current = [];
+    const iso = world.countries[gs.outcome.countryId].props.iso;
+    if (!iso) return;
+    const res = gs.outcome.kind === "correct" ? "hit" : gs.outcome.kind;
+    const ms = Math.round(performance.now() - gs.promptStart);
+    runLog.current.push({
+      iso,
+      res,
+      tries: gs.attempt,
+      hints: gs.hintsUsed,
+      points: gs.outcome.points,
+    });
+    setHistory(
+      recordGuess({
+        iso,
+        res,
+        tries: gs.attempt,
+        hints: gs.hintsUsed,
+        t: Date.now(),
+        ms,
+        ...(miss.length ? { miss } : {}),
+      })
+    );
+  }, [gs, world]);
+
   // end of round
   useEffect(() => {
     if (gs.phase === "over" && gs.pool.length > 0 && !recorded.current) {
@@ -357,6 +480,18 @@ export default function App(): JSX.Element {
       const prevBest = loadStats().bestScore;
       recordRun(gs.score, gs.correctCount, gs.guessCount, gs.bestStreak);
       setPersonalBest(gs.score > prevBest && gs.score > 0);
+      // Members: one atomic RPC per run; the server re-validates the score,
+      // maintains all aggregates, and returns the global board placement.
+      if (account.kind === "member" && runLog.current.length > 0) {
+        void submitRun({
+          run_id: runId.current,
+          region: runRules.region,
+          score: gs.score,
+          correct: gs.correctCount,
+          best_streak: gs.bestStreak,
+          guesses: runLog.current,
+        }).then((ranks) => setRunRanks(ranks));
+      }
       sfx.sfxGameOver(gs.correctCount >= gs.pool.length / 2);
       setScreen("results");
       setAnnounce(STR.a11y.announceGameOver(formatPoints(gs.score)));
@@ -421,6 +556,7 @@ export default function App(): JSX.Element {
     }
 
     // miss — caption stays under this pin so earlier tries remain visible
+    if (hit?.props.iso) misfires.current.push(hit.props.iso);
     const dist = distanceKm(lonlat, target.centroid);
     const dir = compassDirection(lonlat, target.centroid);
     const willReveal = gs.attempt >= gs.maxAttempts;
@@ -451,6 +587,12 @@ export default function App(): JSX.Element {
 
   const onMapTap = (lonlat: LonLat, screenPx: [number, number]): void => {
     sfx.unlockAudio();
+    if (screen === "menu") {
+      // Land picks that continent's region; ocean and unplayable land reset to World.
+      const hit = hitTest(world!, lonlat);
+      selectRegion((hit && continentRegion(hit.props.continent)) ?? "World");
+      return;
+    }
     if (screen === "explore") {
       const hit = hitTest(world!, lonlat);
       setExploreSel(hit);
@@ -635,6 +777,29 @@ export default function App(): JSX.Element {
     );
   }
 
+  // A name plate rides the continent you're about to pick, then stamps itself
+  // onto the one you chose. Hover wins while it lasts — you're reading ahead,
+  // and the picked continent keeps its tint meanwhile. World needs no plate:
+  // the whole globe is the answer.
+  const plateRegion =
+    hoverRegion && hoverRegion !== settings.region
+      ? hoverRegion
+      : settings.region !== "World"
+        ? settings.region
+        : null;
+  const regionLabel =
+    screen === "menu" && !tutorialActive && plateRegion
+      ? {
+          id: plateRegion === settings.region ? `${plateRegion}#${pickSeq}` : plateRegion,
+          eyebrow: STR.menu.regionPlateEyebrow,
+          name: STR.regions[plateRegion] ?? plateRegion,
+          sub: STR.menu.regionPlateSub(regionPool(world, plateRegion).length),
+          at: REGION_FOCUS[plateRegion],
+          chosen: plateRegion === settings.region,
+          chosenLabel: STR.menu.regionPlateChosen,
+        }
+      : null;
+
   const target = gs.pool.length ? world.countries[gs.pool[gs.index]] : null;
   const hintText =
     target && gs.hintsUsed > 0 && gs.phase === "prompt"
@@ -653,23 +818,34 @@ export default function App(): JSX.Element {
         projection={settings.projection}
         graticule={settings.graticule}
         themeColors={themeColors}
+        pin={settings.pin}
+        pinThemed={settings.pinThemed}
         highContrast={settings.highContrast}
         reduceMotion={reduceMotion}
         interactive={interactive}
         ambient={ambient}
+        regionLabel={regionLabel}
+        onRegionHover={setHoverRegion}
+        onEngineReady={() => setEngineEpoch((n) => n + 1)}
         onTap={onMapTap}
+        onVoidTap={() => {
+          if (screen === "menu") selectRegion("World");
+        }}
         onInteract={onMapInteract}
       />
 
       {screen === "menu" && !tutorialActive && (
         <Menu
           world={world}
+          account={account}
           passport={passport}
           region={settings.region}
-          roundLength={settings.roundLength}
           themeColors={themeColors}
+          pin={settings.pin}
+          pinThemed={settings.pinThemed}
           onRegion={selectRegion}
           onThemes={() => setOverlay("theme")}
+          onPins={() => setOverlay("pin")}
           onPlay={onPlay}
           onExplore={() => {
             sfx.unlockAudio();
@@ -679,6 +855,7 @@ export default function App(): JSX.Element {
           onPassport={() => setOverlay("passport")}
           onLeaderboard={() => setOverlay("leaderboard")}
           onSettings={openSettings}
+          onAccount={() => setOverlay("account")}
         />
       )}
 
@@ -739,6 +916,8 @@ export default function App(): JSX.Element {
         <Results
           gs={gs}
           world={world}
+          account={account}
+          ranks={runRanks}
           isPersonalBest={personalBest}
           defaultName={settings.playerName}
           onSave={onSaveScore}
@@ -770,6 +949,7 @@ export default function App(): JSX.Element {
           onChange={updateSettings}
           onClose={closeSettings}
           onOpenThemes={() => setOverlay("theme")}
+          onOpenPins={() => setOverlay("pin")}
           onReplayTutorial={() => {
             setOverlay(null);
             pendingPlay.current = false;
@@ -799,11 +979,34 @@ export default function App(): JSX.Element {
           onClose={() => setOverlay(null)}
         />
       )}
+      {overlay === "pin" && (
+        <PinSheet
+          pinId={settings.pin}
+          themed={settings.pinThemed}
+          colors={themeColors}
+          onSelect={selectPin}
+          onThemed={(pinThemed) => updateSettings({ pinThemed })}
+          onClose={() => setOverlay(null)}
+        />
+      )}
       {overlay === "passport" && (
-        <PassportSheet world={world} passport={passport} onClose={() => setOverlay(null)} />
+        <PassportSheet
+          world={world}
+          passport={passport}
+          history={history}
+          onClose={() => setOverlay(null)}
+        />
       )}
       {overlay === "leaderboard" && (
-        <LeaderboardSheet entries={leaderboard} onClose={() => setOverlay(null)} />
+        <LeaderboardSheet
+          entries={leaderboard}
+          region={settings.region}
+          account={account}
+          onClose={() => setOverlay(null)}
+        />
+      )}
+      {overlay === "account" && (
+        <AccountSheet account={account} onClose={() => setOverlay(null)} />
       )}
 
       <div className="sr-only" aria-live="polite" role="status">

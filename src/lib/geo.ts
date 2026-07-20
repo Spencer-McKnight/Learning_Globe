@@ -201,3 +201,13 @@ export function regionPool(world: World, region: Region): Country[] {
   if (region === "World") return world.quizable;
   return world.quizable.filter((c) => c.props.continent === region);
 }
+
+/**
+ * The playable Region a country's continent maps to, or null for land that
+ * has no round of its own (Antarctica, remote islands).
+ */
+export function continentRegion(continent: string): Region | null {
+  return continent !== "World" && REGIONS.includes(continent as Region)
+    ? (continent as Region)
+    : null;
+}

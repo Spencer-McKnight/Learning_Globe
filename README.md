@@ -1,4 +1,6 @@
-# 🌍 Learning Globe
+# 🌍 learnthe.world
+
+**Live at [learnthe.world](https://learnthe.world)** — formerly "Learning Globe".
 
 A free, gamified world map that teaches geography. Spin a 3D globe (or flat map),
 read a country name, and pin your guess — anywhere inside the country counts.

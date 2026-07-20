@@ -1,4 +1,4 @@
-Welcome to learning globe! This is a fresh, modern project with the ambitious aim to increase geographical literacy worldwide.
+Welcome to learnthe.world Learn the World! This is a fresh, modern project with the ambitious aim to increase geographical literacy worldwide.
 
 Problem Statement:
 People all over the world don't know which country is which, especially when it comes to those lesser-known and unique. Education doesn't fully engage students when teaching such content, so many people fall through the gaps.
