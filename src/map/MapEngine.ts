@@ -106,6 +106,21 @@ const TAP_MAX_MS = 900;
 /** Idle drift: cruising speed, and how long the world takes to reach it. */
 const AMBIENT_DEG_PER_S = 3.2;
 const AMBIENT_SPINUP_MS = 2600;
+/**
+ * Drag feel. The globe turns a little faster than the finger (1:1 makes
+ * crossing an ocean a chore on a phone), and a released drag keeps gliding
+ * for a beat instead of stopping dead. Deliberately understated: the coast
+ * is short enough that you still feel you put the world where it is.
+ */
+const DRAG_GAIN = 1.45;
+/** Exponential decay of the coast, 1/s — ~a third of a second of travel. */
+const FLING_FRICTION = 7.5;
+/** Ceiling on the released velocity, px/s, so a flick can't launch the world. */
+const FLING_MAX_PX_S = 1500;
+/** Below this the coast is over; anything less reads as drift, not motion. */
+const FLING_MIN_PX_S = 14;
+/** Release must follow the last movement this closely to count as a throw. */
+const FLING_GRACE_MS = 90;
 /** Outer zoom-out bound only — view always initialises / resets at k=1 (fitted). */
 const MIN_K = 0.675;
 /** Shared radius for miss direction ring + pin-drop sonar expand. */
@@ -141,10 +156,10 @@ export class MapEngine {
   private ambientStopped = false;
   private graticuleOn = true;
   private reduceMotion = false;
-  private themeColors: ThemeColors = THEMES.deepSea;
+  private themeColors: ThemeColors = THEMES.midnightSonar;
   private highContrastOn = false;
-  private palette: MapPalette = buildMapPalette(THEMES.deepSea, false);
-  private confetti: ConfettiSet = buildConfetti(THEMES.deepSea);
+  private palette: MapPalette = buildMapPalette(THEMES.midnightSonar, false);
+  private confetti: ConfettiSet = buildConfetti(THEMES.midnightSonar);
   private crosshairOn = false;
   private discoveredTint: Set<string> | null = null;
   private pinId: PinId = DEFAULT_PIN_ID;
@@ -175,6 +190,16 @@ export class MapEngine {
   private gestureStart = 0;
   private pinchPrevDist = 0;
   private wasPinch = false;
+  /** A pointer is down and steering the map — hover must not chase the land. */
+  private dragging = false;
+  /** Smoothed drag velocity in px/s, and the coast it hands over on release. */
+  private dragVelX = 0;
+  private dragVelY = 0;
+  private lastMoveAt = 0;
+  private flingX = 0;
+  private flingY = 0;
+  /** UI scale mirrored from the CSS root font size (see theme.css). */
+  private uiScale = 1;
 
   private raf = 0;
   private lastTime = 0;
@@ -286,8 +311,18 @@ export class MapEngine {
     this.dirty = true;
     // Keep the crosshair country lit the same way mouse hover does.
     if (this.crosshairOn && this.interactive) this.hoverAt([this.width / 2, this.height / 2]);
-    // Ambient spin drifts land under a resting cursor; keep the lit continent honest.
-    else if (this.regionPickOn && this.interactive && this.lastPointerPx)
+    // Ambient spin drifts land under a resting cursor; keep the lit continent
+    // honest. Not while the player is steering, though: re-testing a stale
+    // cursor point against fast-moving land lights continents nowhere near
+    // the pointer and flickers between them. A drag moves the world, it
+    // doesn't pick one.
+    else if (
+      this.regionPickOn &&
+      this.interactive &&
+      this.lastPointerPx &&
+      !this.dragging &&
+      !this.coasting
+    )
       this.hoverAt(this.lastPointerPx);
   }
 
@@ -296,9 +331,26 @@ export class MapEngine {
     this.panY = Math.max(-allowed, Math.min(allowed, this.panY));
   }
 
+  /**
+   * The chrome's scale, read straight off the CSS root font size (theme.css
+   * grows it with the viewport). Pins, rings and the crosshair are the map's
+   * share of that system — on a desktop they'd otherwise stay phone-sized
+   * next to buttons and type that grew.
+   */
+  private readUiScale(): void {
+    const px = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    this.uiScale = Number.isFinite(px) ? Math.max(1, Math.min(1.35, px / 16)) : 1;
+  }
+
+  /** Radius of the pin indicator ring in px, at the current UI scale. */
+  ringRadius(): number {
+    return INDICATOR_RING_R * this.uiScale;
+  }
+
   private resize(): void {
     const rect = this.canvas.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
+    this.readUiScale();
     this.width = rect.width;
     this.height = rect.height;
     this.dpr = Math.min(window.devicePixelRatio || 1, 2.5);
@@ -417,6 +469,7 @@ export class MapEngine {
     this.k = 1;
     this.panY = 0;
     this.fly = null;
+    this.stopFling();
     this.apply();
   }
 
@@ -472,6 +525,7 @@ export class MapEngine {
   /** Apply a screen-space pan in the nudge convention (+x right, +y down). */
   private applyNavDelta(dx: number, dy: number): void {
     if (dx === 0 && dy === 0) return;
+    this.stopFling();
     this.notifyInteract();
     const degPerPx = 180 / Math.PI / (this.baseScale * this.k * X_FACTOR[this.projType]);
     this.center[0] += dx * degPerPx;
@@ -483,6 +537,11 @@ export class MapEngine {
     this.fly = null;
     this.stopAmbient();
     this.apply();
+  }
+
+  /** Current zoom, as a multiple of the fitted scale (1 = whole world). */
+  zoomLevel(): number {
+    return this.k;
   }
 
   centerLonLat(): LonLat | null {
@@ -497,6 +556,7 @@ export class MapEngine {
 
   flyTo(target: LonLat, opts: { zoom?: number; dur?: number } = {}): void {
     this.nav.clear();
+    this.stopFling();
     const dur = opts.dur ?? 900;
     const k1 = opts.zoom ?? this.k;
     if (this.reduceMotion || dur <= 0) {
@@ -783,9 +843,14 @@ export class MapEngine {
   private onPointerDown = (e: PointerEvent): void => {
     this.canvas.setPointerCapture(e.pointerId);
     this.pointers.set(e.pointerId, [e.offsetX, e.offsetY]);
+    this.dragging = true;
+    this.stopFling();
     if (this.pointers.size === 1) {
       this.gestureMoved = 0;
       this.gestureStart = performance.now();
+      this.lastMoveAt = this.gestureStart;
+      this.dragVelX = 0;
+      this.dragVelY = 0;
       this.wasPinch = false;
       this.canvas.style.cursor = "grabbing";
     } else if (this.pointers.size === 2) {
@@ -824,18 +889,36 @@ export class MapEngine {
     const dx = cur[0] - prev[0];
     const dy = cur[1] - prev[1];
     this.gestureMoved += Math.abs(dx) + Math.abs(dy);
+
+    // Smoothed velocity, so one jittery frame can't decide the coast.
+    const now = performance.now();
+    const dt = Math.max(8, now - this.lastMoveAt);
+    this.lastMoveAt = now;
+    this.dragVelX = this.dragVelX * 0.6 + ((dx / dt) * 1000) * 0.4;
+    this.dragVelY = this.dragVelY * 0.6 + ((dy / dt) * 1000) * 0.4;
+
     this.drag(dx, dy);
   };
 
   private drag(dx: number, dy: number): void {
     // Pointer drag wins over keyboard coast so the two don't fight.
     this.nav.clear();
+    this.panByPx(dx, dy);
+  }
+
+  /**
+   * Move the view by a screen-space drag delta (finger convention: the land
+   * follows the finger). DRAG_GAIN lets the globe turn faster than the hand;
+   * flat maps stay 1:1, where a map that outruns your finger reads as a bug.
+   */
+  private panByPx(dx: number, dy: number): void {
     this.notifyInteract();
     const scale = this.baseScale * this.k;
+    const gain = this.projType === "globe" ? DRAG_GAIN : 1;
     const degPerPx = 180 / Math.PI / (scale * X_FACTOR[this.projType]);
-    this.center[0] -= dx * degPerPx;
+    this.center[0] -= dx * degPerPx * gain;
     if (this.projType === "globe") {
-      this.center[1] = clampLat(this.center[1] + dy * (180 / Math.PI / scale));
+      this.center[1] = clampLat(this.center[1] + dy * (180 / Math.PI / scale) * gain);
     } else {
       this.panY += dy;
     }
@@ -844,27 +927,57 @@ export class MapEngine {
     this.apply();
   }
 
+  private get coasting(): boolean {
+    return this.flingX !== 0 || this.flingY !== 0;
+  }
+
+  private stopFling(): void {
+    this.flingX = 0;
+    this.flingY = 0;
+  }
+
+  /** Hand the drag's last velocity to the coast, if the release earned one. */
+  private startFling(): void {
+    if (this.reduceMotion) return;
+    if (performance.now() - this.lastMoveAt > FLING_GRACE_MS) return;
+    const speed = Math.hypot(this.dragVelX, this.dragVelY);
+    if (speed < FLING_MIN_PX_S * 4) return;
+    const cap = Math.min(1, FLING_MAX_PX_S / speed);
+    this.flingX = this.dragVelX * cap;
+    this.flingY = this.dragVelY * cap;
+  }
+
   private onPointerUp = (e: PointerEvent): void => {
     const had = this.pointers.delete(e.pointerId);
     this.canvas.style.cursor = this.interactive ? "grab" : "default";
     if (!had) return;
+    if (this.pointers.size === 0) this.dragging = false;
     const quick = performance.now() - this.gestureStart < TAP_MAX_MS;
-    if (
-      this.interactive &&
-      !this.wasPinch &&
-      this.pointers.size === 0 &&
-      this.gestureMoved < TAP_SLOP_PX &&
-      quick
-    ) {
+    const isTap =
+      !this.wasPinch && this.pointers.size === 0 && this.gestureMoved < TAP_SLOP_PX && quick;
+
+    if (this.interactive && isTap) {
       const px: [number, number] = [e.offsetX, e.offsetY];
       const lonlat = this.invert(px);
       if (lonlat) this.cb.onTap(lonlat, px);
       else this.cb.onVoidTap?.();
+      return;
+    }
+
+    if (this.pointers.size === 0 && !this.wasPinch && this.interactive) {
+      this.startFling();
+      // The cursor sat still while the world moved under it — re-read what
+      // it's actually over now that the gesture is done.
+      if (e.pointerType === "mouse" && !this.crosshairOn && !this.coasting) {
+        this.lastPointerPx = [e.offsetX, e.offsetY];
+        this.hoverAt([e.offsetX, e.offsetY]);
+      }
     }
   };
 
   private onPointerCancel = (e: PointerEvent): void => {
     this.pointers.delete(e.pointerId);
+    if (this.pointers.size === 0) this.dragging = false;
   };
 
   private onPointerLeave = (): void => {
@@ -912,6 +1025,7 @@ export class MapEngine {
   private hasActiveEffects(now: number): boolean {
     if (this.fly) return true;
     if (this.nav.active) return true;
+    if (this.coasting) return true;
     if (this.ripples.length || this.particles.length || this.flashes.size) return true;
     if (this.pins.some((p) => now - p.born < 500)) return true;
     if (this.directionHint && !this.reduceMotion) return true;
@@ -945,6 +1059,27 @@ export class MapEngine {
         }
       } else {
         this.zoomPivot = null;
+      }
+    }
+
+    // Released drag keeps gliding, then settles. Anything that takes the
+    // wheel — a new touch, a flight, the keyboard — ends the coast outright.
+    if (this.coasting) {
+      if (this.dragging || this.fly || this.nav.active) {
+        this.stopFling();
+      } else {
+        const dts = dt / 1000;
+        this.panByPx(this.flingX * dts, this.flingY * dts);
+        const decay = Math.exp(-FLING_FRICTION * dts);
+        this.flingX *= decay;
+        this.flingY *= decay;
+        if (Math.hypot(this.flingX, this.flingY) < FLING_MIN_PX_S) {
+          this.stopFling();
+          // Land the hover on whatever finally came to rest under the cursor.
+          if (this.regionPickOn && this.interactive && this.lastPointerPx) {
+            this.hoverAt(this.lastPointerPx);
+          }
+        }
       }
     }
 
@@ -1120,12 +1255,13 @@ export class MapEngine {
       const p = this.projection(r.lonlat);
       if (!p) continue;
       const age = (now - r.born) / r.dur;
+      const ringR = this.ringRadius();
       const breath = this.reduceMotion ? 1 : 0.92 + 0.08 * Math.sin(age * Math.PI * 3.2);
 
       // soft wash that blooms then clears inside the ring
       if (!this.reduceMotion && age < 0.72) {
         const washT = easeOut(age / 0.72);
-        const washR = Math.max(0.5, washT * INDICATOR_RING_R * breath);
+        const washR = Math.max(0.5, washT * ringR * breath);
         const wash = ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], washR);
         wash.addColorStop(0, withAlpha(r.color, (1 - washT) * 0.22));
         wash.addColorStop(0.55, withAlpha(r.color, (1 - washT) * 0.1));
@@ -1141,7 +1277,7 @@ export class MapEngine {
         if (ringAge < 0 || ringAge > 1) continue;
         // Ease out fast, then settle at the indicator ring edge
         const expand = 1 - (1 - ringAge) ** 2.6;
-        const radius = Math.max(0.5, expand * INDICATOR_RING_R);
+        const radius = Math.max(0.5, expand * ringR);
         const fade = (1 - ringAge) ** 1.15;
         const alpha = fade * (0.42 - ring * 0.08) * breath;
         ctx.beginPath();
@@ -1199,10 +1335,11 @@ export class MapEngine {
     // keyboard crosshair
     if (this.crosshairOn) {
       const [cx, cy] = [w / 2, h / 2];
+      const u = this.uiScale;
       ctx.strokeStyle = pal.crosshair;
-      ctx.lineWidth = 1.8;
+      ctx.lineWidth = 1.8 * u;
       ctx.beginPath();
-      ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+      ctx.arc(cx, cy, 14 * u, 0, Math.PI * 2);
       ctx.stroke();
       ctx.beginPath();
       for (const [dx, dy] of [
@@ -1211,12 +1348,12 @@ export class MapEngine {
         [-1, 0],
         [1, 0],
       ]) {
-        ctx.moveTo(cx + dx * 18, cy + dy * 18);
-        ctx.lineTo(cx + dx * 28, cy + dy * 28);
+        ctx.moveTo(cx + dx * 18 * u, cy + dy * 18 * u);
+        ctx.lineTo(cx + dx * 28 * u, cy + dy * 28 * u);
       }
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(cx, cy, 2.2, 0, Math.PI * 2);
+      ctx.arc(cx, cy, 2.2 * u, 0, Math.PI * 2);
       ctx.fillStyle = pal.crosshair;
       ctx.fill();
     }
@@ -1254,7 +1391,7 @@ export class MapEngine {
     const ctx = this.ctx;
     ctx.save();
     ctx.translate(x, y);
-    ctx.scale(scale, scale);
+    ctx.scale(scale * this.uiScale, scale * this.uiScale);
     this.pinDesign.draw(
       ctx,
       buildPinInk(this.pinId, kind, this.pinThemed, this.themeColors)
@@ -1282,7 +1419,7 @@ export class MapEngine {
     if (!aheadPx) return;
 
     const peak = Math.atan2(aheadPx[1] - origin[1], aheadPx[0] - origin[0]);
-    const radius = INDICATOR_RING_R;
+    const radius = this.ringRadius();
     const halfArc = Math.PI / 4; // exact quarter (±45°)
     const a0 = peak - halfArc;
     const a1 = peak + halfArc;
@@ -1305,8 +1442,8 @@ export class MapEngine {
     ctx.stroke();
 
     // uniform quarter — arc runs fully to the edges; tips sit just inside & outside
-    const strokeW = 2;
-    const tipLen = 6;
+    const strokeW = 2 * this.uiScale;
+    const tipLen = 6 * this.uiScale;
     const tipHalf = strokeW * 0.85;
     const tipInset = tipHalf / radius; // ½ tip-width back along the arc from each edge
     const tipForward = strokeW / 2; // ½ stroke-width out from the ring

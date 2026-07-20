@@ -17,6 +17,8 @@ interface ResultsProps {
   defaultName: string;
   onSave: (name: string) => void;
   saved: boolean;
+  /** Guests only: open the account sheet straight from the score screen. */
+  onSignIn: () => void;
   onPlayAgain: () => void;
   onMenu: () => void;
 }
@@ -29,6 +31,7 @@ export function Results({
   defaultName,
   onSave,
   saved,
+  onSignIn,
   onPlayAgain,
   onMenu,
 }: ResultsProps): JSX.Element {
@@ -78,6 +81,17 @@ export function Results({
                 {gs.discoveries.map((iso) => flagEmoji(iso)).join(" ")}
               </div>
               <div className="label">{STR.results.discoveries}</div>
+            </div>
+          )}
+
+          {/* A guest has a score on screen and nowhere for it to travel — the
+              one honest moment to offer an account. Never blocks the local save. */}
+          {account.kind === "guest" && (
+            <div className="signin-cta">
+              <button className="btn btn-primary" onClick={onSignIn}>
+                {STR.account.saveScoreCta}
+              </button>
+              <p className="signin-cta-sub">{STR.account.saveScoreCtaSub}</p>
             </div>
           )}
 

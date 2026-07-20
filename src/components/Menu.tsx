@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
 import { STR } from "../content/strings";
 import { formatPoints } from "../game/scoring";
-import type { Account } from "../lib/account";
 import { REGIONS, regionPool, type Region, type World } from "../lib/geo";
 import { loadStats, type Passport } from "../lib/storage";
+import type { Account } from "../lib/account";
 import type { PinId } from "../map/pins";
 import type { ThemeColors } from "../styles/themes";
 import { AccountBadge } from "./AccountBadge";
-import { IconCompass, IconPassport, IconSliders, IconTrophy } from "./icons";
+import { IconCompass, IconLeaderboard, IconSliders, IconTrophy } from "./icons";
 import { PinBadge } from "./PinSheet";
 import { ThemeOrb } from "./ThemeSheet";
 
@@ -30,6 +30,12 @@ interface MenuProps {
   onAccount: () => void;
 }
 
+/**
+ * Home: title at the top, the world in the middle, Play at the bottom, and
+ * every other control as a plain circle on one of the two rails — dressing
+ * (left) and progress (right). Nothing sits over the middle of the globe,
+ * which is the thing you actually play on.
+ */
 export function Menu(props: MenuProps): JSX.Element {
   // Fresh on every visit to the menu (the component remounts per screen change).
   const [stats] = useState(loadStats);
@@ -50,58 +56,63 @@ export function Menu(props: MenuProps): JSX.Element {
           <h1>{STR.wordmark}</h1>
           <p className="tagline">{STR.tagline}</p>
         </div>
-
-        <div className="menu-corner">
-          <button
-            className="icon-btn menu-settings"
-            onClick={props.onSettings}
-            aria-label={STR.menu.settings}
-          >
-            <IconSliders />
-          </button>
-          <button
-            className="icon-btn menu-world"
-            onClick={props.onThemes}
-            aria-label={STR.themes.openLabel}
-          >
-            <ThemeOrb c={props.themeColors} size={30} />
-          </button>
-          <button
-            className="icon-btn menu-pin"
-            onClick={props.onPins}
-            aria-label={STR.pins.openLabel}
-          >
-            <PinBadge
-              id={props.pin}
-              themed={props.pinThemed}
-              colors={props.themeColors}
-              size={32}
-            />
-          </button>
-        </div>
-
-        <div className="journey">
-          <AccountBadge account={props.account} onOpen={props.onAccount} />
-          <button
-            className="journey-pill"
-            onClick={props.onPassport}
-            aria-label={STR.menu.journeyPassportLabel(discovered, counts.World)}
-          >
-            <IconPassport size={16} />
-            <span>{STR.menu.journeyPassport(discovered, counts.World)}</span>
-          </button>
-          {stats.bestScore > 0 && (
-            <button
-              className="journey-pill"
-              onClick={props.onLeaderboard}
-              aria-label={STR.menu.journeyBestLabel(formatPoints(stats.bestScore))}
-            >
-              <IconTrophy size={16} />
-              <span>{formatPoints(stats.bestScore)}</span>
-            </button>
-          )}
-        </div>
       </header>
+
+      <nav className="menu-rail menu-rail--left" aria-label={STR.menu.railLeftLabel}>
+        <button
+          className="icon-btn rail-btn menu-world"
+          onClick={props.onThemes}
+          aria-label={STR.themes.openLabel}
+        >
+          <ThemeOrb c={props.themeColors} size={30} />
+        </button>
+        <button
+          className="icon-btn rail-btn menu-pin"
+          onClick={props.onPins}
+          aria-label={STR.pins.openLabel}
+        >
+          <PinBadge
+            id={props.pin}
+            themed={props.pinThemed}
+            colors={props.themeColors}
+            size={32}
+          />
+        </button>
+        <button
+          className="icon-btn rail-btn menu-settings"
+          onClick={props.onSettings}
+          aria-label={STR.menu.settings}
+        >
+          <IconSliders size={20} />
+        </button>
+      </nav>
+
+      <nav className="menu-rail menu-rail--right" aria-label={STR.menu.railRightLabel}>
+        <button
+          className="icon-btn rail-btn"
+          onClick={props.onPassport}
+          aria-label={STR.menu.journeyPassportLabel(discovered, counts.World)}
+        >
+          <IconTrophy size={20} />
+          {discovered > 0 && (
+            <span className="rail-badge" aria-hidden="true">
+              {discovered}
+            </span>
+          )}
+        </button>
+        <button
+          className="icon-btn rail-btn"
+          onClick={props.onLeaderboard}
+          aria-label={
+            stats.bestScore > 0
+              ? STR.menu.journeyBestLabel(formatPoints(stats.bestScore))
+              : STR.leaderboard.openLabel
+          }
+        >
+          <IconLeaderboard size={20} />
+        </button>
+        <AccountBadge account={props.account} onOpen={props.onAccount} />
+      </nav>
 
       <section className="dock" aria-label={STR.menu.startAria}>
         {/* Pointer users pick a continent on the globe itself; this hidden

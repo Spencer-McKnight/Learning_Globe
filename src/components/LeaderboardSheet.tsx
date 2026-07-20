@@ -11,6 +11,10 @@ interface LeaderboardSheetProps {
   entries: LeaderboardEntry[];
   region: Region;
   account: Account;
+  /** Which board the opener meant — the home rail asks for the global one. */
+  initialTab?: Tab;
+  /** Guests only: the global board is the reward for having an account. */
+  onSignIn: () => void;
   onClose: () => void;
 }
 
@@ -20,9 +24,11 @@ export function LeaderboardSheet({
   entries,
   region,
   account,
+  initialTab = "device",
+  onSignIn,
   onClose,
 }: LeaderboardSheetProps): JSX.Element {
-  const [tab, setTab] = useState<Tab>("device");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [period, setPeriod] = useState<BoardPeriod>("thisweek");
   const [board, setBoard] = useState<Board | null>(null);
   const [loading, setLoading] = useState(false);
@@ -49,7 +55,7 @@ export function LeaderboardSheet({
 
   return (
     <Sheet title={STR.leaderboard.title} onClose={onClose}>
-      <div className="set-tabs" role="tablist">
+      <div className="set-tabs" role="tablist" aria-label={STR.leaderboard.title}>
         <button
           role="tab"
           aria-selected={tab === "device"}
@@ -137,7 +143,12 @@ export function LeaderboardSheet({
             </p>
           )}
           {board && !isMember(account) && (
-            <p className="empty-note">{STR.leaderboard.signInPrompt}</p>
+            <div className="signin-cta">
+              <button className="btn btn-primary" onClick={onSignIn}>
+                {STR.leaderboard.signInCta}
+              </button>
+              <p className="signin-cta-sub">{STR.leaderboard.signInPrompt}</p>
+            </div>
           )}
         </>
       )}

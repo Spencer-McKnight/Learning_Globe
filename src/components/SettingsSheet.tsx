@@ -1,13 +1,18 @@
 import { useRef, useState } from "react";
 import { STR } from "../content/strings";
 import type { MotionPref, ProjectionId, Settings } from "../lib/storage";
+import type { ThemeColors } from "../styles/themes";
+import { PinBadge } from "./PinSheet";
 import { Sheet } from "./Sheet";
+import { ThemeOrb } from "./ThemeSheet";
 
 const TABS = ["view", "game", "feel", "help"] as const;
 type SettingsTab = (typeof TABS)[number];
 
 interface SettingsSheetProps {
   settings: Settings;
+  /** Resolved colours of the active world, for the live picker previews. */
+  themeColors: ThemeColors;
   onChange: (patch: Partial<Settings>) => void;
   onClose: () => void;
   onReplayTutorial: () => void;
@@ -83,6 +88,7 @@ function Seg<T extends string | number>({
 
 export function SettingsSheet({
   settings,
+  themeColors,
   onChange,
   onClose,
   onReplayTutorial,
@@ -145,16 +151,29 @@ export function SettingsSheet({
               columns={2}
               onChange={(projection) => onChange({ projection })}
             />
+            {/* The same round previews the home rail uses: you pick the world
+                and the pin by looking at them, not by reading their names. */}
             <div className="set-row">
               <span className="set-label">{STR.themes.settingsRow}</span>
-              <button className="btn btn-ghost" onClick={onOpenThemes}>
+              <button className="set-picker" onClick={onOpenThemes}>
                 {STR.themes.names[settings.theme] ?? STR.themes.names.custom}
+                <span className="set-picker-face">
+                  <ThemeOrb c={themeColors} size={30} />
+                </span>
               </button>
             </div>
             <div className="set-row">
               <span className="set-label">{STR.pins.settingsRow}</span>
-              <button className="btn btn-ghost" onClick={onOpenPins}>
+              <button className="set-picker" onClick={onOpenPins}>
                 {STR.pins.names[settings.pin] ?? STR.pins.names.classic}
+                <span className="set-picker-face">
+                  <PinBadge
+                    id={settings.pin}
+                    themed={settings.pinThemed}
+                    colors={themeColors}
+                    size={32}
+                  />
+                </span>
               </button>
             </div>
             <Toggle

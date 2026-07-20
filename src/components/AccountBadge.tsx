@@ -3,9 +3,10 @@ import type { Account } from "../lib/account";
 import { IconUser } from "./icons";
 
 /**
- * The one place the UI says who is playing — now a button that opens the
- * account sheet (sign in as a guest, manage profile as a member). Any
- * other guest/member visual difference must also branch on `account.kind`
+ * The one place the UI says who is playing — a round rail button that opens
+ * the account sheet (sign in as a guest, manage profile as a member). A guest
+ * wears a live dot: there is something to gain by tapping. Any other
+ * guest/member visual difference must also branch on `account.kind`
  * (see lib/account.ts) — never on a loose boolean.
  */
 export function AccountBadge({
@@ -16,17 +17,17 @@ export function AccountBadge({
   onOpen: () => void;
 }): JSX.Element {
   const guest = account.kind === "guest";
-  const label = guest ? STR.account.guest : account.name || account.email;
+  const who = guest ? STR.account.guest : account.name || account.email;
   const sub = guest ? STR.account.guestSub : STR.account.memberSub;
   return (
     <button
-      className="journey-pill account-pill"
-      title={sub}
+      className="icon-btn rail-btn account-rail"
+      title={`${who} — ${sub}`}
       onClick={onOpen}
       aria-label={STR.account.openLabel}
     >
-      <IconUser size={16} />
-      <span>{label}</span>
+      <IconUser size={20} />
+      {guest && <span className="rail-dot" aria-hidden="true" />}
       <span className="sr-only">{sub}</span>
     </button>
   );

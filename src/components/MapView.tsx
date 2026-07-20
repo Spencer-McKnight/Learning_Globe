@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import type { Country, LonLat, Region, World } from "../lib/geo";
 import type { ProjectionId } from "../lib/storage";
-import { INDICATOR_RING_R, MapEngine } from "../map/MapEngine";
+import { MapEngine } from "../map/MapEngine";
 import type { PinId } from "../map/pins";
 import type { ThemeColors } from "../styles/themes";
 import { STR } from "../content/strings";
@@ -47,6 +47,7 @@ export interface RegionLabel {
 function syncPinCaptions(engine: MapEngine, root: HTMLDivElement, reduceMotion: boolean): void {
   const captions = engine.pinCaptions();
   const now = performance.now();
+  const ringR = engine.ringRadius();
   const used = new Set<string>();
 
   captions.forEach((cap, i) => {
@@ -57,7 +58,7 @@ function syncPinCaptions(engine: MapEngine, root: HTMLDivElement, reduceMotion: 
       el = document.createElement("div");
       el.className = "pin-caption";
       el.dataset.pinCap = key;
-      el.style.maxWidth = `${INDICATOR_RING_R * 1.7}px`;
+      el.style.maxWidth = `${ringR * 1.7}px`;
       const km = document.createElement("div");
       km.className = "pin-caption-km";
       km.textContent = cap.lines[0] ?? "";
@@ -94,7 +95,7 @@ function syncPinCaptions(engine: MapEngine, root: HTMLDivElement, reduceMotion: 
     const fade = reduceMotion ? 1 : Math.min(1, Math.max(0, (now - cap.born - 60) / 280));
     el.style.opacity = String(fade);
     // Top-align so the km line stays put when the secondary line is cleared
-    const nestY = screen[1] + INDICATOR_RING_R * 0.12;
+    const nestY = screen[1] + ringR * 0.12;
     el.style.transform = `translate(${screen[0]}px, ${nestY}px) translate(-50%, 0)`;
   });
 

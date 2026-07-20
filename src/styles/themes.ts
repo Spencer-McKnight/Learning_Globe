@@ -2,14 +2,21 @@
  * Worlds — the selectable colour themes. Each ThemeColors is a complete,
  * self-contained palette:
  *   · UI tier — mirrors the :root --color-* base tokens in theme.css
- *     (Deep Blue Sea is the default hardcoded there so first paint is right);
+ *     (Midnight Sonar is the default hardcoded there so first paint is right);
  *   · map tier — feeds the canvas globe via buildMapPalette().
  *
- * Every world passes the contrast gates checked by the validation script
- * (see memory.md "Colour themes"): text/surface ≥ 7, muted/surface ≥ 4.5,
- * danger & reward on panels ≥ 4.5, accent & success ≥ 4.0, button text on
- * accent/success fills ≥ 4.5, land/ocean ≥ 2.0, pin-caption halo/ink ≥ 7
- * (deriveCaptionInk). Rerun the script whenever a value changes.
+ * Every world passes the contrast gates checked by scripts/validate-themes.ts
+ * (npm run validate:themes). The ladder (WCAG minimums): text/surface ≥ 7,
+ * muted on surface + wells ≥ 4.5, accent/success/danger/reward on panels
+ * ≥ 4.5, button text on fills ≥ 4.5, inactive/surface ≥ 3, land/ocean ≥ 3,
+ * landHover/land ≥ 1.6, landSelected/land ≥ 1.8 (plus a hue shift),
+ * accent & success on land ≥ 3, danger/ocean ≥ 3 on dark worlds (light
+ * worlds rely on the marker casing instead), pin-caption halo/ink ≥ 7
+ * (deriveCaptionInk). Structurally each world is three separated lightness
+ * bands — ocean near the dark pole, land mid, signal colours bright (or the
+ * mirror of that on light worlds) — so contrast comes from tone distance
+ * and hue stays free for character. Rerun the script whenever a value
+ * changes.
  * Names/descriptions live in strings.ts (STR.themes).
  *
  * This file, the theme.css palette blocks, the pin signature/accent colours
@@ -30,15 +37,13 @@ import {
 } from "./palette";
 
 export type BuiltinThemeId =
-  | "deepSea"
-  | "paperAtlas"
-  | "terraFirma"
+  | "midnightSonar"
+  | "porcelain"
   | "springMeadow"
-  | "beacon"
-  | "chalkboard"
-  | "emberDusk"
-  | "auroraNight"
-  | "candyPop";
+  | "cinderforge"
+  | "observatory"
+  | "signalTide"
+  | "inkstone";
 
 export type ThemeId = BuiltinThemeId | "custom";
 
@@ -67,205 +72,175 @@ export interface ThemeColors {
 }
 
 export const THEMES: Record<BuiltinThemeId, ThemeColors> = {
-  /** The original midnight ocean — sonar pings in the dark. */
-  deepSea: {
-    bg: "#060a18",
-    surfaceSunken: "#0b132b",
-    surface: "#1c2541",
-    inactive: "#3a506b",
-    accent: "#5bc0be",
-    success: "#6fffe9",
-    danger: "#ff7a6b",
-    reward: "#ffd97a",
-    text: "#eef6f6",
-    textMuted: "#9fb3c8",
-    ocean: "#102043",
-    oceanCenter: "#16294f",
-    land: "#41608a",
-    landHover: "#567aa8",
-    landSelected: "#418f88",
-    landBorder: "rgba(180, 205, 230, 0.62)",
-    graticule: "rgba(140, 170, 200, 0.11)",
+  /** Night-flight radar: near-black indigo sea, moonlit slate land. */
+  midnightSonar: {
+    bg: "#05070f",
+    surfaceSunken: "#0c1120",
+    surface: "#161d33",
+    inactive: "#7787a8",
+    accent: "#6fd6ff",
+    success: "#7dffb0",
+    danger: "#ff9587",
+    reward: "#ffd76a",
+    text: "#f2f6ff",
+    textMuted: "#aab7d7",
+    ocean: "#071226",
+    oceanCenter: "#0b1830",
+    land: "#50658b",
+    landHover: "#8fa6c9",
+    landSelected: "#63b7ab",
+    landBorder: "rgba(200, 220, 245, 0.7)",
+    graticule: "rgba(150, 180, 215, 0.12)",
   },
-  /** Light + calm: a vintage schoolroom wall map. The "simple" world. */
-  paperAtlas: {
+  /** Light + calm: white glaze, deep ink, a dark tea-glaze sea. */
+  porcelain: {
     light: true,
-    bg: "#f2ead9",
-    surfaceSunken: "#e3d7bf",
-    surface: "#fbf6ea",
-    inactive: "#a09274",
-    accent: "#1f5f8b",
-    success: "#15693a",
-    danger: "#bf3f2c",
-    reward: "#8a5e07",
-    text: "#2c2417",
-    textMuted: "#6b5f4b",
-    ocean: "#5b97b5",
-    oceanCenter: "#6ba4c0",
-    land: "#ecdcb4",
-    landHover: "#ddc48c",
-    landSelected: "#86aea0",
-    landBorder: "rgba(90, 74, 44, 0.68)",
-    graticule: "rgba(90, 74, 44, 0.14)",
+    bg: "#eef1f4",
+    surfaceSunken: "#dde3e9",
+    surface: "#ffffff",
+    inactive: "#66788a",
+    accent: "#0f5e9c",
+    success: "#0e6b46",
+    danger: "#b02c20",
+    reward: "#7d5302",
+    text: "#16202c",
+    textMuted: "#44546b",
+    ocean: "#27506b",
+    oceanCenter: "#2e5b78",
+    land: "#eae3d2",
+    landHover: "#b3ab92",
+    landSelected: "#7fa08b",
+    landBorder: "rgba(45, 60, 70, 0.7)",
+    graticule: "rgba(45, 60, 70, 0.13)",
   },
-  /** Earthy: loam, moss, and copper under a pine-dark sea. */
-  terraFirma: {
-    bg: "#120d07",
-    surfaceSunken: "#211710",
-    surface: "#32261a",
-    inactive: "#75604a",
-    accent: "#c98f4c",
-    success: "#a4d465",
-    danger: "#ff6a45",
-    reward: "#ffe08a",
-    text: "#f5efe4",
-    textMuted: "#bfae94",
-    ocean: "#24413b",
-    oceanCenter: "#2b4a42",
-    land: "#83694a",
-    landHover: "#9c7f5c",
-    landSelected: "#92995a",
-    landBorder: "rgba(230, 210, 175, 0.62)",
-    graticule: "rgba(200, 180, 150, 0.11)",
-  },
-  /** Light + fresh: new grass and clear spring sky. */
+  /** Light + fresh: new grass and spring sky, re-keeled with a deeper sea. */
   springMeadow: {
     light: true,
-    bg: "#eaf6ec",
-    surfaceSunken: "#d8ecdc",
+    bg: "#e9f4e6",
+    surfaceSunken: "#d3e6d1",
     surface: "#ffffff",
-    inactive: "#93ac97",
-    accent: "#1e6b41",
-    success: "#1259b0",
-    danger: "#c23d1f",
-    reward: "#8a5c05",
-    text: "#16301f",
-    textMuted: "#4f6a58",
-    ocean: "#3f92c4",
-    oceanCenter: "#55a3d1",
-    land: "#cdeaa2",
-    landHover: "#a8cf6e",
-    landSelected: "#76ab72",
-    landBorder: "rgba(45, 90, 60, 0.62)",
-    graticule: "rgba(45, 90, 60, 0.11)",
+    inactive: "#5f7a68",
+    accent: "#175f3a",
+    success: "#124f9e",
+    danger: "#ab3115",
+    reward: "#775002",
+    text: "#122619",
+    textMuted: "#3f5a49",
+    ocean: "#2a6f8f",
+    oceanCenter: "#337a9b",
+    land: "#d7ecad",
+    landHover: "#94ba62",
+    landSelected: "#4f8a68",
+    landBorder: "rgba(35, 75, 48, 0.7)",
+    graticule: "rgba(35, 75, 48, 0.12)",
   },
-  /** Colour-blind friendly: Okabe-Ito blue/orange axis, luminance-coded. */
-  beacon: {
-    bg: "#0a0d13",
-    surfaceSunken: "#131a26",
-    surface: "#1e2734",
-    inactive: "#4d5a6e",
-    accent: "#56b4e9",
-    success: "#7ecbff",
-    danger: "#e69f00",
-    reward: "#f0e442",
-    text: "#f2f7fb",
-    textMuted: "#a9b7c6",
-    ocean: "#142132",
-    oceanCenter: "#1a2a3e",
-    land: "#4c688f",
-    landHover: "#6485ad",
-    landSelected: "#5191c1",
-    landBorder: "rgba(190, 210, 235, 0.62)",
-    graticule: "rgba(150, 175, 205, 0.11)",
+  /** Basalt-black sea, ember land, molten signal colours. */
+  cinderforge: {
+    bg: "#0d0705",
+    surfaceSunken: "#1a100a",
+    surface: "#2a1a10",
+    inactive: "#957d64",
+    accent: "#ffb35c",
+    success: "#b5e878",
+    danger: "#ff8266",
+    reward: "#ffe08a",
+    text: "#f8efe6",
+    textMuted: "#cbb29a",
+    ocean: "#160e13",
+    oceanCenter: "#1c1219",
+    land: "#8a5f42",
+    landHover: "#c08c62",
+    landSelected: "#cf9a5e",
+    landBorder: "rgba(240, 215, 185, 0.68)",
+    graticule: "rgba(210, 180, 150, 0.11)",
   },
-  /** Pure luminance: readable with any colour vision, including none. */
-  chalkboard: {
-    bg: "#050505",
-    surfaceSunken: "#121212",
-    surface: "#1e1e21",
-    inactive: "#5c5c64",
-    accent: "#c2c2cc",
+  /** Violet void, moon-slate land, starlight accents. */
+  observatory: {
+    bg: "#070312",
+    surfaceSunken: "#100a22",
+    surface: "#1b1233",
+    inactive: "#8a80b3",
+    accent: "#c3b2ff",
+    success: "#7dffd4",
+    danger: "#ff8ba6",
+    reward: "#ffd36e",
+    text: "#f1edff",
+    textMuted: "#b5addb",
+    ocean: "#0a0618",
+    oceanCenter: "#0f0a20",
+    land: "#5e5b84",
+    landHover: "#928eb8",
+    landSelected: "#6fb9a4",
+    landBorder: "rgba(215, 205, 250, 0.68)",
+    graticule: "rgba(175, 165, 220, 0.11)",
+  },
+  /** Colour-blind safe: blue/orange axis only, every state luminance-coded. */
+  signalTide: {
+    bg: "#05090e",
+    surfaceSunken: "#0d151d",
+    surface: "#182430",
+    inactive: "#7d8fa1",
+    accent: "#7ac8ff",
+    success: "#c9e8ff",
+    danger: "#ffab40",
+    reward: "#f4e35c",
+    text: "#f3f8fc",
+    textMuted: "#a8bfd1",
+    ocean: "#060e17",
+    oceanCenter: "#0a1520",
+    land: "#4c6785",
+    landHover: "#84a2c2",
+    landSelected: "#9fc6e8",
+    landBorder: "rgba(200, 222, 240, 0.7)",
+    graticule: "rgba(150, 180, 210, 0.12)",
+  },
+  /** Pure luminance ladder: readable with no colour vision at all. */
+  inkstone: {
+    bg: "#070707",
+    surfaceSunken: "#131313",
+    surface: "#1f1f22",
+    inactive: "#8c8c94",
+    accent: "#d9d9e1",
     success: "#ffffff",
-    danger: "#a2a2ab",
-    reward: "#d8d8b8",
-    text: "#f5f5f7",
-    textMuted: "#ababb3",
-    ocean: "#101013",
-    oceanCenter: "#17171a",
-    land: "#52525a",
-    landHover: "#6b6b74",
-    landSelected: "#8f8f99",
-    landBorder: "rgba(230, 230, 235, 0.62)",
-    graticule: "rgba(200, 200, 210, 0.1)",
-  },
-  /** Eye-catching: the last minute of a warm sunset. */
-  emberDusk: {
-    bg: "#170b14",
-    surfaceSunken: "#251222",
-    surface: "#351b30",
-    inactive: "#7a5872",
-    accent: "#ff8e5e",
-    success: "#63e6c2",
-    danger: "#ff4f75",
-    reward: "#ffc94d",
-    text: "#fff1e8",
-    textMuted: "#cfa8b8",
-    ocean: "#2a1236",
-    oceanCenter: "#33173f",
-    land: "#96536a",
-    landHover: "#b06a84",
-    landSelected: "#cb7160",
-    landBorder: "rgba(255, 205, 180, 0.58)",
-    graticule: "rgba(220, 170, 160, 0.1)",
-  },
-  /** Arctic night: aurora green and ice over a black polar sea. */
-  auroraNight: {
-    bg: "#030710",
-    surfaceSunken: "#081120",
-    surface: "#101f33",
-    inactive: "#3d5673",
-    accent: "#58dd9b",
-    success: "#8ff0ff",
-    danger: "#ff6f9a",
-    reward: "#c9a6ff",
-    text: "#ecf8ff",
-    textMuted: "#9db8d2",
-    ocean: "#0a1728",
-    oceanCenter: "#0e1e33",
-    land: "#3a5f78",
-    landHover: "#4f7994",
-    landSelected: "#499e8a",
-    landBorder: "rgba(170, 220, 235, 0.62)",
-    graticule: "rgba(140, 190, 215, 0.1)",
-  },
-  /** Playful: grape soda seas and bubblegum pins. */
-  candyPop: {
-    bg: "#150e20",
-    surfaceSunken: "#221632",
-    surface: "#31204a",
-    inactive: "#6b5694",
-    accent: "#ff7ac2",
-    success: "#71f5c8",
-    danger: "#ff6242",
-    reward: "#ffd93d",
-    text: "#fdf3ff",
-    textMuted: "#c3aede",
-    ocean: "#251a42",
-    oceanCenter: "#2c2050",
-    land: "#6d55a8",
-    landHover: "#8a70c7",
-    landSelected: "#b667b5",
-    landBorder: "rgba(225, 195, 255, 0.62)",
-    graticule: "rgba(190, 160, 230, 0.11)",
+    danger: "#a8a8b0",
+    reward: "#e3e3c2",
+    text: "#f6f6f8",
+    textMuted: "#b3b3bb",
+    ocean: "#0b0b0e",
+    oceanCenter: "#101013",
+    land: "#5e5e68",
+    landHover: "#90909b",
+    landSelected: "#c0c0cc",
+    landBorder: "rgba(238, 238, 243, 0.7)",
+    graticule: "rgba(205, 205, 215, 0.1)",
   },
 };
 
 /** Display order in the theme picker; "custom" renders after these. */
 export const THEME_ORDER: BuiltinThemeId[] = [
-  "deepSea",
-  "paperAtlas",
-  "terraFirma",
+  "midnightSonar",
+  "porcelain",
   "springMeadow",
-  "beacon",
-  "chalkboard",
-  "emberDusk",
-  "auroraNight",
-  "candyPop",
+  "cinderforge",
+  "observatory",
+  "signalTide",
+  "inkstone",
 ];
 
-export const DEFAULT_THEME_ID: ThemeId = "deepSea";
-export const DEFAULT_CUSTOM_SEED = "#5bc0be";
+/** Saved theme ids from the Worlds 1.0 catalogue map to their closest heir. */
+export const LEGACY_THEME_IDS: Record<string, BuiltinThemeId> = {
+  deepSea: "midnightSonar",
+  paperAtlas: "porcelain",
+  terraFirma: "cinderforge",
+  beacon: "signalTide",
+  chalkboard: "inkstone",
+  emberDusk: "cinderforge",
+  auroraNight: "observatory",
+  candyPop: "observatory",
+};
+
+export const DEFAULT_THEME_ID: ThemeId = "midnightSonar";
+export const DEFAULT_CUSTOM_SEED = "#6fd6ff";
 
 /* ---------------- custom world derivation ---------------- */
 
@@ -274,70 +249,111 @@ const hueDist = (a: number, b: number): number => {
   return d > 180 ? 360 - d : d;
 };
 
-/** Raise lightness until `fg` clears `min` contrast on `bgHex`. */
+/** Raise lightness until `fg` clears every `[bg, min]` contrast pair. */
 function liftToContrast(
   h: number,
   s: number,
   startL: number,
-  bgHex: string,
-  min: number
+  gates: [string, number][]
 ): string {
   let l = startL;
   let c = hslToHex(h, s, l);
-  while (contrast(c, bgHex) < min && l < 92) {
+  while (gates.some(([bg, min]) => contrast(c, bg) < min) && l < 96) {
     l += 2;
     c = hslToHex(h, s, l);
   }
   return c;
 }
 
-const CUSTOM_DANGER = "#ff7a6b";
-const CUSTOM_REWARD = "#ffd97a";
+/** Tint `col` toward white until it clears `min` contrast on `bgHex`. */
+function tintToContrast(col: string, bgHex: string, min: number): string {
+  let c = col;
+  for (let i = 0; i < 24 && contrast(c, bgHex) < min; i++) {
+    const next = tint(c, 0.08);
+    if (next === c) break;
+    c = next;
+  }
+  return c;
+}
+
+const CUSTOM_DANGER = "#ff9587";
+const CUSTOM_REWARD = "#ffd76a";
 const DANGER_HUE = 8;
 
 /**
- * Grow a whole dark world from one seed colour. Fixed lightness scaffolding
- * plus contrast-lifting keeps every derived world inside the same gates as
- * the built-ins, whatever hue the player picks. Danger/reward stay the
- * universal coral/gold so miss and discovery feedback never change meaning.
+ * Grow a whole dark world from one seed colour. The same three-band ladder
+ * as the built-ins — ocean near the dark pole, land mid, signals bright —
+ * with contrast-lifting so every derived world clears every gate whatever
+ * hue the player picks. Danger/reward stay the universal coral/gold so miss
+ * and discovery feedback never change meaning.
  */
 export function deriveCustomTheme(seed: string): ThemeColors {
   const [h, s0] = hexToHsl(seed);
   const s = Math.max(45, Math.min(88, s0 || 60));
 
-  const surface = hslToHex(h, 28, 17);
-  const accent = liftToContrast(h, s, 58, surface, 4.5);
+  const surface = hslToHex(h, 28, 15);
+  const ocean = hslToHex(h, 45, 7);
+  let land = liftToContrast(h, 26, 38, [[ocean, 3]]);
+  // High-luma hues (yellows) start above the land band: settle back down
+  // until white caption ink clears the land, keeping headroom over the ocean.
+  {
+    let [, , l] = hexToHsl(land);
+    while (
+      contrast("#ffffff", land) < 4.6 &&
+      contrast(hslToHex(h, 26, l - 2), ocean) >= 3 &&
+      l > 20
+    ) {
+      l -= 2;
+      land = hslToHex(h, 26, l);
+    }
+  }
+  const accent = liftToContrast(h, s, 58, [
+    [surface, 4.5],
+    [land, 3],
+  ]);
 
   let successHue = (h + 45) % 360;
   if (hueDist(successHue, DANGER_HUE) < 35) successHue = (h + 315) % 360;
   if (hueDist(successHue, DANGER_HUE) < 35) successHue = 150;
-  const success = liftToContrast(successHue, 85, 72, surface, 4.5);
+  const success = liftToContrast(successHue, 85, 72, [
+    [surface, 4.5],
+    [land, 3],
+  ]);
 
-  const land = hslToHex(h, 24, 42);
+  const [, landS, landL] = hexToHsl(land);
+  const landHover = liftToContrast(h, Math.min(landS + 4, 100), landL + 8, [[land, 1.6]]);
+  const landSelected = tintToContrast(mix(land, accent, 0.55), land, 1.8);
+
   return {
-    bg: hslToHex(h, 35, 5),
-    surfaceSunken: hslToHex(h, 33, 11),
+    bg: hslToHex(h, 35, 4),
+    surfaceSunken: hslToHex(h, 33, 9),
     surface,
-    inactive: hslToHex(h, 16, 44),
+    inactive: liftToContrast(h, 16, 42, [[surface, 3]]),
     accent,
     success,
     danger: CUSTOM_DANGER,
     reward: CUSTOM_REWARD,
     text: hslToHex(h, 40, 96),
-    textMuted: liftToContrast(h, 20, 71, surface, 4.5),
-    ocean: hslToHex(h, 42, 15),
-    oceanCenter: hslToHex(h, 42, 19),
+    textMuted: liftToContrast(h, 20, 71, [[surface, 4.5]]),
+    ocean,
+    oceanCenter: hslToHex(h, 45, 10),
     land,
-    landHover: hslToHex(h, 26, 50),
-    landSelected: mix(land, accent, 0.5),
-    landBorder: withAlpha(hslToHex(h, 40, 84), 0.62),
+    landHover,
+    landSelected,
+    landBorder: withAlpha(hslToHex(h, 40, 86), 0.7),
     graticule: withAlpha(hslToHex(h, 30, 70), 0.11),
   };
 }
 
+/** Normalise any stored id (including Worlds 1.0 ids) to a live ThemeId. */
+export function migrateThemeId(id: string): ThemeId {
+  if (id === "custom" || id in THEMES) return id as ThemeId;
+  return LEGACY_THEME_IDS[id] ?? DEFAULT_THEME_ID;
+}
+
 export function resolveThemeColors(id: ThemeId, customSeed: string): ThemeColors {
   if (id === "custom") return deriveCustomTheme(customSeed);
-  return THEMES[id] ?? THEMES.deepSea;
+  return THEMES[id] ?? THEMES[migrateThemeId(id) as BuiltinThemeId] ?? THEMES.midnightSonar;
 }
 
 /* ---------------- canvas twins ---------------- */

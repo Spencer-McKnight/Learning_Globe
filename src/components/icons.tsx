@@ -110,6 +110,17 @@ export function IconTrophy(props: IconProps): JSX.Element {
   );
 }
 
+/** Ranked podium — the global board, distinct from the trophy on the passport. */
+export function IconLeaderboard(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <rect x="9.5" y="4" width="5" height="16" rx="1.2" />
+      <rect x="3" y="10" width="5" height="10" rx="1.2" />
+      <rect x="16" y="8" width="5" height="12" rx="1.2" />
+    </Svg>
+  );
+}
+
 export function IconUser(props: IconProps): JSX.Element {
   return (
     <Svg {...props}>

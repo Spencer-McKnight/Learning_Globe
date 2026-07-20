@@ -10,6 +10,7 @@ import { PinSheet } from "./components/PinSheet";
 import { Results } from "./components/Results";
 import { SettingsSheet } from "./components/SettingsSheet";
 import { Sheet } from "./components/Sheet";
+import { IconMinus, IconPlus } from "./components/icons";
 import { ThemeSheet } from "./components/ThemeSheet";
 import { Tutorial } from "./components/Tutorial";
 import { STR } from "./content/strings";
@@ -384,7 +385,13 @@ export default function App({ account }: { account: Account }): JSX.Element {
     const e = engineRef.current;
     e?.clearPins();
     e?.clearFlashes();
-    e?.resetView();
+    // The camera is deliberately left where it is: you framed a continent on
+    // the menu, so the round starts on that same view instead of snapping
+    // back to a default the player never asked for. The one exception is a
+    // deep close-up left over from a reveal — that eases back out (a glide,
+    // not a cut) so the first prompt is findable.
+    const zoom = e?.zoomLevel() ?? 1;
+    if (zoom > 1.6) e?.zoomBy(1 / zoom);
     dispatch({ type: "start", pool, maxAttempts: rules.attempts, now: performance.now() });
   };
 
@@ -414,7 +421,9 @@ export default function App({ account }: { account: Account }): JSX.Element {
     sfx.sfxTap();
     updateSettings({ region });
     setPickSeq((n) => n + 1);
-    setAnnounce(STR.menu.regionChosen(STR.regions[region]));
+    setAnnounce(
+      region === "World" ? STR.menu.regionCleared : STR.menu.regionChosen(STR.regions[region])
+    );
     // World has no heart to fly to — stay wherever the player is looking.
     if (region !== "World") engineRef.current?.flyTo(REGION_FOCUS[region], { dur: 1100 });
   };
@@ -504,13 +513,17 @@ export default function App({ account }: { account: Account }): JSX.Element {
     }
   }, [gs]);
 
-  const evaluateGuess = (lonlat: LonLat, screenPx: [number, number]): void => {
+  /** `hit` is the country under the pin — never null; water never gets here. */
+  const evaluateGuess = (
+    lonlat: LonLat,
+    screenPx: [number, number],
+    hit: Country
+  ): void => {
     if (!world) return;
     const e = engineRef.current;
     const target = world.countries[gs.pool[gs.index]];
-    const hit = hitTest(world, lonlat);
 
-    if (hit && hit.id === target.id) {
+    if (hit.id === target.id) {
       const prox = proximity(target, lonlat);
       const elapsed = performance.now() - gs.promptStart;
       const result = scoreGuess({
@@ -562,7 +575,7 @@ export default function App({ account }: { account: Account }): JSX.Element {
     }
 
     // miss — caption stays under this pin so earlier tries remain visible
-    if (hit?.props.iso) misfires.current.push(hit.props.iso);
+    if (hit.props.iso) misfires.current.push(hit.props.iso);
     const dist = distanceKm(lonlat, target.centroid);
     const dir = compassDirection(lonlat, target.centroid);
     const willReveal = gs.attempt >= gs.maxAttempts;
@@ -591,23 +604,30 @@ export default function App({ account }: { account: Account }): JSX.Element {
     }
   };
 
+  /**
+   * Every tap has to land on a country. Water carries no answer and no
+   * region, so treating an ocean tap as a choice only ever punishes a
+   * misjudged thumb — here it costs nothing and changes nothing.
+   */
   const onMapTap = (lonlat: LonLat, screenPx: [number, number]): void => {
     sfx.unlockAudio();
+    const hit = hitTest(world!, lonlat);
+
     if (screen === "menu") {
-      // Land picks that continent's region; ocean and unplayable land reset to World.
-      const hit = hitTest(world!, lonlat);
-      selectRegion((hit && continentRegion(hit.props.continent)) ?? "World");
+      const region = hit ? continentRegion(hit.props.continent) : null;
+      if (!region) return; // ocean, ice, or land with no round of its own
+      // Tapping the continent you already chose hands the world back — the
+      // only way to reach "World" now that water is inert.
+      selectRegion(region === settings.region ? "World" : region);
       return;
     }
     if (screen === "explore") {
-      const hit = hitTest(world!, lonlat);
+      if (!hit) return;
       setExploreSel(hit);
-      engineRef.current?.setSelected(hit ? hit.id : null);
-      if (hit) {
-        engineRef.current?.ripple(lonlat, "neutral");
-        sfx.sfxTap();
-        setAnnounce(hit.props.name);
-      }
+      engineRef.current?.setSelected(hit.id);
+      engineRef.current?.ripple(lonlat, "neutral");
+      sfx.sfxTap();
+      setAnnounce(hit.props.name);
       return;
     }
     if (screen !== "game" || paused || overlay || settingsApplyPrompt) return;
@@ -617,8 +637,14 @@ export default function App({ account }: { account: Account }): JSX.Element {
       return;
     }
     if (gs.phase !== "prompt") return;
+    if (!hit) {
+      // Not a try, not a miss — just a nudge back toward land.
+      engineRef.current?.ripple(lonlat, "neutral");
+      setAnnounce(STR.game.tapLand);
+      return;
+    }
     engineRef.current && sfx.sfxPin();
-    evaluateGuess(lonlat, screenPx);
+    evaluateGuess(lonlat, screenPx, hit);
   };
 
   const onHint = (): void => {
@@ -646,9 +672,9 @@ export default function App({ account }: { account: Account }): JSX.Element {
     e?.clearPins();
     e?.clearFlashes();
     e?.setSelected(null);
-    // Recompose the menu view on the player's chosen region instead of
-    // leaving the camera wherever the round ended.
-    e?.resetView(REGION_FOCUS[settings.region]);
+    // Recompose the menu view on the player's chosen region — as a flight, not
+    // a cut, so leaving a round never teleports the world out from under you.
+    e?.flyTo(REGION_FOCUS[settings.region], { dur: 900, zoom: 1 });
     setScreen("menu");
   };
 
@@ -807,12 +833,14 @@ export default function App({ account }: { account: Account }): JSX.Element {
       : null;
 
   const target = gs.pool.length ? world.countries[gs.pool[gs.index]] : null;
+  // Hints climb: the vaguest clue first, the one that all but hands you the
+  // map last — so spending a third hint always feels like the bigger step.
   const hintText =
     target && gs.hintsUsed > 0 && gs.phase === "prompt"
       ? [
-          STR.game.hintContinent(STR.regions[target.props.continent] ?? target.props.continent),
-          STR.game.hintCapitalFlag(target.flag ?? "", target.props.capital ?? ""),
           STR.game.hintPopulation(formatPopulation(target.props.pop)),
+          STR.game.hintCapitalFlag(target.flag ?? "", target.props.capital ?? ""),
+          STR.game.hintContinent(STR.regions[target.props.continent] ?? target.props.continent),
         ][gs.hintsUsed - 1]
       : null;
 
@@ -834,9 +862,6 @@ export default function App({ account }: { account: Account }): JSX.Element {
         onRegionHover={setHoverRegion}
         onEngineReady={() => setEngineEpoch((n) => n + 1)}
         onTap={onMapTap}
-        onVoidTap={() => {
-          if (screen === "menu") selectRegion("World");
-        }}
         onInteract={onMapInteract}
       />
 
@@ -892,20 +917,20 @@ export default function App({ account }: { account: Account }): JSX.Element {
                 ← {STR.explore.back}
               </button>
             </div>
-            <div className="zoom-stack">
+            {/* Same capsule, same corner as the game's — the map controls
+                must not move when you switch between exploring and playing. */}
+            <div className="zoom-capsule">
               <button
-                className="icon-btn"
                 onClick={() => engineRef.current?.zoomBy(1.5)}
                 aria-label={STR.game.zoomIn}
               >
-                +
+                <IconPlus />
               </button>
               <button
-                className="icon-btn"
                 onClick={() => engineRef.current?.zoomBy(1 / 1.5)}
                 aria-label={STR.game.zoomOut}
               >
-                −
+                <IconMinus />
               </button>
             </div>
           </div>
@@ -928,6 +953,7 @@ export default function App({ account }: { account: Account }): JSX.Element {
           defaultName={settings.playerName}
           onSave={onSaveScore}
           saved={savedScore}
+          onSignIn={() => setOverlay("account")}
           onPlayAgain={beginRun}
           onMenu={backToMenu}
         />
@@ -938,6 +964,9 @@ export default function App({ account }: { account: Account }): JSX.Element {
           <div className="results-actions">
             <button className="btn btn-primary" onClick={() => setPaused(false)}>
               {STR.game.resume}
+            </button>
+            <button className="btn btn-ghost" onClick={openSettings}>
+              {STR.pause.settings}
             </button>
             <button className="btn btn-ghost" onClick={beginRun}>
               {STR.pause.restart}
@@ -952,6 +981,7 @@ export default function App({ account }: { account: Account }): JSX.Element {
       {overlay === "settings" && (
         <SettingsSheet
           settings={settings}
+          themeColors={themeColors}
           onChange={updateSettings}
           onClose={closeSettings}
           onOpenThemes={() => setOverlay("theme")}
@@ -1003,11 +1033,14 @@ export default function App({ account }: { account: Account }): JSX.Element {
           onClose={() => setOverlay(null)}
         />
       )}
+      {/* The rail asks for the world's board; the device list is a tab away. */}
       {overlay === "leaderboard" && (
         <LeaderboardSheet
           entries={leaderboard}
           region={settings.region}
           account={account}
+          initialTab="global"
+          onSignIn={() => setOverlay("account")}
           onClose={() => setOverlay(null)}
         />
       )}

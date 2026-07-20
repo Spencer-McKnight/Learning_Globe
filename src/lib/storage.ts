@@ -1,6 +1,11 @@
 import type { Region } from "./geo";
 import { DEFAULT_PIN_ID, type PinId } from "../map/pins";
-import { DEFAULT_CUSTOM_SEED, DEFAULT_THEME_ID, type ThemeId } from "../styles/themes";
+import {
+  DEFAULT_CUSTOM_SEED,
+  DEFAULT_THEME_ID,
+  migrateThemeId,
+  type ThemeId,
+} from "../styles/themes";
 import { currentAccount, storagePrefix, type Account } from "./account";
 
 export type ProjectionId = "globe" | "naturalEarth" | "equalEarth" | "mercator";
@@ -136,7 +141,11 @@ function write(key: string, value: unknown): void {
   }
 }
 
-export const loadSettings = (): Settings => read(key("settings"), DEFAULT_SETTINGS);
+export function loadSettings(): Settings {
+  const s = read(key("settings"), DEFAULT_SETTINGS);
+  // Saved (or cloud-synced) worlds from the 1.0 catalogue land on their heir.
+  return { ...s, theme: migrateThemeId(s.theme) };
+}
 export function saveSettings(s: Settings): void {
   write(key("settings"), s);
   write(key("settingsAt"), Date.now());

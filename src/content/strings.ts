@@ -20,14 +20,17 @@ export const STR = {
     settings: "Settings",
     regionLabel: "Where do you want to play?",
     startAria: "Start a game",
+    /** The two circular rails of controls that flank the globe. */
+    railLeftLabel: "Look and feel",
+    railRightLabel: "Your progress",
     worldAll: (n: number) => `All ${n} countries`,
     count: (n: number) => n.toLocaleString(),
     regionTile: (name: string, n: number) => `${name}, ${n} countries`,
     regionChosen: (name: string) => `Region set to ${name}.`,
+    regionCleared: "Playing the whole world.",
     regionPlateEyebrow: "Continent",
     regionPlateChosen: "Selected",
     regionPlateSub: (n: number) => `${n} countries`,
-    journeyPassport: (found: number, total: number) => `${found} / ${total}`,
     journeyPassportLabel: (found: number, total: number) =>
       `Passport: ${found} of ${total} countries discovered`,
     journeyBestLabel: (score: string) =>
@@ -39,6 +42,13 @@ export const STR = {
     guestSub: "Playing as a guest — progress is saved on this device.",
     memberSub: "Signed in — progress syncs to your account.",
     guestScoreNote: "Guest scores stay on this device.",
+    /** The one place we ask for a sign-up — right where the reward lands.
+        Worded forward-looking on purpose: signing in carries this device's
+        passport and best score over, and puts every run after it on the
+        global board (the run just played was scored as a guest). */
+    saveScoreCta: "Save your scores online",
+    saveScoreCtaSub:
+      "Free account — your passport follows you to any device, and your runs join the global board.",
     openLabel: "Account — sign in or manage your profile",
     sheetTitle: "Your account",
     signInTitle: "Sign in",
@@ -98,6 +108,8 @@ export const STR = {
     resume: "Keep playing",
     zoomIn: "Zoom in",
     zoomOut: "Zoom out",
+    /** Ocean taps never cost a try — they're misclicks, not guesses. */
+    tapLand: "Pins only land on a country — try again on land.",
     attemptsLeft: (n: number) => (n === 1 ? "Last try!" : `${n} tries left`),
     correct: ["Nailed it!", "Spot on!", "You got it!", "Brilliant!", "Cartographer!"],
     bullseye: "Bullseye!",
@@ -178,6 +190,8 @@ export const STR = {
     globalEmpty: "No global scores here yet — be the first!",
     yourRank: (rank: string) => `Your rank: #${rank}`,
     signInPrompt: "Sign in to appear on the global board.",
+    signInCta: "Sign in",
+    openLabel: "High scores — global and this device",
   },
 
   settings: {
@@ -235,27 +249,23 @@ export const STR = {
     customHint: "Pick any colour — a whole world grows from it.",
     customSwatchAria: (hex: string) => `Custom world colour, currently ${hex}`,
     names: {
-      deepSea: "Deep Blue Sea",
-      paperAtlas: "Paper Atlas",
-      terraFirma: "Terra Firma",
+      midnightSonar: "Midnight Sonar",
+      porcelain: "Porcelain",
       springMeadow: "Spring Meadow",
-      beacon: "Beacon",
-      chalkboard: "Chalkboard",
-      emberDusk: "Ember Dusk",
-      auroraNight: "Aurora Night",
-      candyPop: "Candy Pop",
+      cinderforge: "Cinderforge",
+      observatory: "Observatory",
+      signalTide: "Signal Tide",
+      inkstone: "Inkstone",
       custom: "Your world",
     } as Record<string, string>,
     descriptions: {
-      deepSea: "Midnight ocean, sonar pings in the dark.",
-      paperAtlas: "A calm vintage schoolroom map. Easy on the eyes.",
-      terraFirma: "Loam, moss, and copper — the smell of rain on soil.",
+      midnightSonar: "A night flight: moonlit land on a radar-dark sea.",
+      porcelain: "White glaze and deep ink. Calm, crisp, and clear.",
       springMeadow: "New grass under a clear spring sky.",
-      beacon: "Blue and orange, tuned for red-green colour blindness.",
-      chalkboard: "Pure light and shade — readable with any colour vision.",
-      emberDusk: "The last warm minute of a sunset.",
-      auroraNight: "Aurora green and ice over a black polar sea.",
-      candyPop: "Grape soda seas and bubblegum pins.",
+      cinderforge: "Ember land over a basalt-black sea.",
+      observatory: "A violet void, moon-slate land, starlight signals.",
+      signalTide: "Blue and orange only — tuned for red-green colour blindness.",
+      inkstone: "Pure light and shade — readable with any colour vision.",
       custom: "Grown from your colour. Feedback stays coral and gold.",
     } as Record<string, string>,
     applied: (name: string) => `World changed to ${name}.`,
@@ -345,6 +355,7 @@ export const STR = {
   pause: {
     title: "Paused",
     restart: "Restart",
+    settings: "Settings",
   },
 
   loading: "Charting the oceans…",
