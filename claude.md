@@ -44,6 +44,7 @@ Future Development Intentions (Not yet a constraint):
 - Dynamic, cached multi-language support.
 - Country and a State or Province mode, or All.
 - Map pins that evolve the more you get right into shinier, artistic or stylised, caracatures
+- Additional gamemodes to select country by their capital or flag, or type in their capital when given a country
 
 Other Driving Considerations:
 

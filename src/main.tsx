@@ -8,6 +8,8 @@ import "@fontsource/nunito/700.css";
 import "@fontsource/nunito/800.css";
 import "./styles/theme.css";
 import App from "./App";
+import { GuidePage } from "./components/GuidePage";
+import { PrivacyPage } from "./components/PrivacyPage";
 import { GUEST_ACCOUNT, watchAccount, type Account } from "./lib/account";
 import { setActiveAccount } from "./lib/storage";
 
@@ -16,6 +18,11 @@ import { setActiveAccount } from "./lib/storage";
  * it on sign-in/out, so every piece of state loaded from storage at mount
  * (settings, passport, history, leaderboard) re-reads from the account's
  * own bucket — no per-loader plumbing.
+ *
+ * The info pages (/privacy, /guide) are whole-page destinations, not app
+ * screens: the footer reaches them with plain anchors and they come back
+ * with plain anchors, so no router is needed — just this path switch.
+ * (Static hosting needs an SPA fallback to index.html for these paths.)
  */
 function Root(): JSX.Element {
   const [account, setAccount] = useState<Account>(GUEST_ACCOUNT);
@@ -29,7 +36,14 @@ function Root(): JSX.Element {
     []
   );
 
-  return <App key={account.kind === "guest" ? "guest" : account.id} account={account} />;
+  const accountKey = account.kind === "guest" ? "guest" : account.id;
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  if (path === "/privacy") return <PrivacyPage />;
+  // Keyed like App: the guide's live settings panel must re-read the right
+  // storage bucket when the session lands.
+  if (path === "/guide") return <GuidePage key={accountKey} account={account} />;
+
+  return <App key={accountKey} account={account} />;
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

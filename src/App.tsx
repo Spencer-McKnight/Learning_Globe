@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { AccountSheet } from "./components/AccountSheet";
 import { ExploreCard } from "./components/ExploreCard";
 import { Hud } from "./components/Hud";
@@ -10,6 +10,7 @@ import { PinSheet } from "./components/PinSheet";
 import { Results } from "./components/Results";
 import { SettingsSheet } from "./components/SettingsSheet";
 import { Sheet } from "./components/Sheet";
+import { SiteFooter } from "./components/SiteFooter";
 import { IconMinus, IconPlus } from "./components/icons";
 import { ThemeSheet } from "./components/ThemeSheet";
 import { Tutorial } from "./components/Tutorial";
@@ -108,6 +109,13 @@ const matchRulesEqual = (a: MatchRules, b: MatchRules): boolean =>
 
 const FEEDBACK_MS = 1900;
 const REVEAL_MS = 3000;
+/**
+ * Camera framing. On the menu the globe is fitted into the clear band between
+ * the title and Play; starting a round hands it the whole screen and closes in
+ * a little, so play opens with the world arriving rather than sitting still.
+ */
+const FRAME_MS = 900;
+const PLAY_ZOOM = 1.2;
 /** Persistent glow while the player studies the revealed country. */
 const REVEAL_FLASH_MS = Number.POSITIVE_INFINITY;
 
@@ -138,6 +146,8 @@ export default function App({ account }: { account: Account }): JSX.Element {
   const [runRanks, setRunRanks] = useState<BoardRanks | null>(null);
   /** Bumped whenever MapView hands us a freshly built engine to configure. */
   const [engineEpoch, setEngineEpoch] = useState(0);
+  /** Clear band on the menu (title above, Play below), measured by Menu. */
+  const [menuBand, setMenuBand] = useState<{ top: number; bottom: number } | null>(null);
   const [osReducedMotion, setOsReducedMotion] = useState(
     () => window.matchMedia("(prefers-reduced-motion: reduce)").matches
   );
@@ -249,7 +259,8 @@ export default function App({ account }: { account: Account }): JSX.Element {
     (screen === "game" && !paused && !overlay && !settingsApplyPrompt) ||
     screen === "explore" ||
     menuLive;
-  const ambient = screen === "menu" || screen === "results";
+  // Idle drift pauses during the tour so its staged scenes hold still.
+  const ambient = (screen === "menu" && !tutorialActive) || screen === "results";
 
   useEffect(() => {
     const e = engineRef.current;
@@ -266,14 +277,46 @@ export default function App({ account }: { account: Account }): JSX.Element {
     engineRef.current?.setCrosshair(keyboardNav && (screen === "game" || screen === "explore"));
   }, [keyboardNav, screen, engineEpoch]);
 
+  // On the menu the wheel belongs to the page: scrolling reveals the site
+  // footer below the horizon instead of zooming. Every other screen zooms.
+  useEffect(() => {
+    engineRef.current?.setWheelZoom(screen !== "menu");
+  }, [screen, engineEpoch]);
+
   useEffect(() => {
     const e = engineRef.current;
     if (!e) return;
-    e.setRegionPick(screen === "menu");
+    e.setRegionPick(screen === "menu" && !tutorialActive);
     e.setPickedContinent(
-      screen === "menu" && settings.region !== "World" ? settings.region : null
+      screen === "menu" && !tutorialActive && settings.region !== "World"
+        ? settings.region
+        : null
     );
-  }, [screen, settings.region, world, engineEpoch]);
+  }, [screen, settings.region, world, engineEpoch, tutorialActive]);
+
+  const onMenuBand = useCallback((band: { top: number; bottom: number }) => {
+    setMenuBand((prev) =>
+      prev && Math.abs(prev.top - band.top) < 1 && Math.abs(prev.bottom - band.bottom) < 1
+        ? prev
+        : band
+    );
+  }, []);
+
+  /**
+   * Where the map is framed. On the menu it fits the band between the title and
+   * Play; every other screen hands it the whole canvas. A change of framing
+   * eases — that ease is half of the "pan in" when a round starts — while a
+   * resize within one framing lands immediately.
+   */
+  const framing = screen === "menu" && menuBand && !tutorialActive ? "menu" : "full";
+  const lastFraming = useRef<string | null>(null);
+  useEffect(() => {
+    const e = engineRef.current;
+    if (!e) return;
+    const changed = lastFraming.current !== null && lastFraming.current !== framing;
+    lastFraming.current = framing;
+    e.setViewInsets(framing === "menu" && menuBand ? menuBand : {}, changed ? FRAME_MS : 0);
+  }, [framing, menuBand, engineEpoch]);
 
   useEffect(() => {
     const cancel = (): void => {
@@ -385,13 +428,13 @@ export default function App({ account }: { account: Account }): JSX.Element {
     const e = engineRef.current;
     e?.clearPins();
     e?.clearFlashes();
-    // The camera is deliberately left where it is: you framed a continent on
-    // the menu, so the round starts on that same view instead of snapping
-    // back to a default the player never asked for. The one exception is a
-    // deep close-up left over from a reveal — that eases back out (a glide,
-    // not a cut) so the first prompt is findable.
-    const zoom = e?.zoomLevel() ?? 1;
-    if (zoom > 1.6) e?.zoomBy(1 / zoom);
+    // The camera keeps its bearing: you framed a continent on the menu, so the
+    // round starts on that same view instead of snapping back to a default the
+    // player never asked for. What does change is the framing — the menu band
+    // opens out to the whole screen (the insets effect above) while the view
+    // closes in to a playable zoom. Together that reads as flying in. It also
+    // absorbs a deep close-up left over from a reveal, easing back out.
+    e?.zoomTo(PLAY_ZOOM, FRAME_MS);
     dispatch({ type: "start", pool, maxAttempts: rules.attempts, now: performance.now() });
   };
 
@@ -428,23 +471,59 @@ export default function App({ account }: { account: Account }): JSX.Element {
     if (region !== "World") engineRef.current?.flyTo(REGION_FOCUS[region], { dur: 1100 });
   };
 
+  /**
+   * The menu may be scrolled down to the site footer; playing resumes at the
+   * full-height stage. Ride a smooth scroll back to the top first so the round
+   * doesn't open with the footer covering the world, then hand over.
+   */
+  const settleScroll = (then: () => void): void => {
+    if (window.scrollY <= 1) {
+      then();
+      return;
+    }
+    if (reduceMotion) {
+      window.scrollTo(0, 0);
+      then();
+      return;
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    const t0 = performance.now();
+    const tick = (): void => {
+      // Settled, or bail out if the browser never finishes the glide.
+      if (window.scrollY <= 1 || performance.now() - t0 > 800) {
+        then();
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+
   const onPlay = (): void => {
     sfx.unlockAudio();
     sfx.sfxTap();
-    if (!tutorialSeen()) {
-      pendingPlay.current = true;
-      setTutorialActive(true);
-      return;
-    }
-    beginRun();
+    settleScroll(() => {
+      if (!tutorialSeen()) {
+        pendingPlay.current = true;
+        setTutorialActive(true);
+        return;
+      }
+      beginRun();
+    });
   };
 
   const onTutorialDone = (): void => {
     markTutorialSeen();
     setTutorialActive(false);
+    // Strike the tour's demo set — pins, flashes, ring — before play or menu.
+    const e = engineRef.current;
+    e?.clearPins();
+    e?.clearFlashes();
     if (pendingPlay.current) {
       pendingPlay.current = false;
       beginRun();
+    } else {
+      e?.resetView();
     }
   };
 
@@ -678,6 +757,13 @@ export default function App({ account }: { account: Account }): JSX.Element {
     setScreen("menu");
   };
 
+  /** Pause-menu escape hatch: replay the tour on the menu globe, then a fresh run. */
+  const tutorialRestart = (): void => {
+    backToMenu();
+    pendingPlay.current = true;
+    setTutorialActive(true);
+  };
+
   const onSaveScore = (name: string): void => {
     const entry: LeaderboardEntry = {
       name: name || STR.results.namePlaceholder,
@@ -880,17 +966,31 @@ export default function App({ account }: { account: Account }): JSX.Element {
           onPlay={onPlay}
           onExplore={() => {
             sfx.unlockAudio();
-            setScreen("explore");
-            setAnnounce(STR.explore.hint);
+            settleScroll(() => {
+              setScreen("explore");
+              setAnnounce(STR.explore.hint);
+            });
           }}
           onPassport={() => setOverlay("passport")}
           onLeaderboard={() => setOverlay("leaderboard")}
           onSettings={openSettings}
           onAccount={() => setOverlay("account")}
+          onBand={onMenuBand}
         />
       )}
 
-      {tutorialActive && <Tutorial onDone={onTutorialDone} />}
+      {/* Only the menu is a scrollable page; in play the stage owns the full
+          height and there is nothing below the world. */}
+      {screen === "menu" && !tutorialActive && <SiteFooter onSettings={openSettings} />}
+
+      {tutorialActive && (
+        <Tutorial
+          onDone={onTutorialDone}
+          engineRef={engineRef}
+          world={world}
+          reduceMotion={reduceMotion}
+        />
+      )}
 
       {screen === "game" && target && (
         <Hud
@@ -970,6 +1070,9 @@ export default function App({ account }: { account: Account }): JSX.Element {
             </button>
             <button className="btn btn-ghost" onClick={beginRun}>
               {STR.pause.restart}
+            </button>
+            <button className="btn btn-ghost" onClick={tutorialRestart}>
+              {STR.pause.tutorial}
             </button>
             <button className="btn btn-ghost" onClick={backToMenu}>
               {STR.game.quit}

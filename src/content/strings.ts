@@ -7,7 +7,7 @@ export const STR = {
   appName: "learnthe.world",
   eyebrow: "Learn the",
   wordmark: "World",
-  tagline: "Spin the world. Pin your guess. Discover every country.",
+  tagline: "",
 
   menu: {
     play: "Play",
@@ -310,15 +310,15 @@ export const STR = {
     steps: [
       {
         title: "Read the country name",
-        body: "The card at the top tells you which country to find. No labels on the map — that's the game!",
+        body: "Your mission shows up top, like this one. No labels on the map — that's the game!",
       },
       {
         title: "Spin, zoom, and tap",
-        body: "Drag to spin the world, pinch or use + / − to zoom, then tap where you think the country is. Anywhere inside it counts!",
+        body: "Drag to spin, pinch or + / − to zoom, tap to guess. Watch — a near miss! The glowing ring points toward the answer.",
       },
       {
         title: "Build your streak",
-        body: "Every correct answer in a row doubles your points. First-ever finds go in your Passport. Stuck? Tap Hint.",
+        body: "Bullseye — anywhere inside the country counts. Streaks double your points, and first-ever finds join your Passport.",
       },
     ],
     next: "Next",
@@ -356,6 +356,187 @@ export const STR = {
     title: "Paused",
     restart: "Restart",
     settings: "Settings",
+    tutorial: "Tutorial",
+  },
+
+  /** The site footer beneath the menu — scroll down on the home screen. */
+  footer: {
+    navLabel: "Site",
+    mission: "Learn every country on Earth. Free, for everyone.",
+    privacy: "Privacy policy",
+    guide: "Usability guide",
+    settings: "Settings",
+    copyright: (year: number) => `© ${year} learnthe.world`,
+    builtBy: "Built by",
+    builtByName: "digital-knight.au",
+    share: "Share",
+    /** What the native share sheet carries alongside the link. */
+    shareText: "Can you pin every country on the globe? Play free at learnthe.world.",
+    copied: "Link copied!",
+  },
+
+  /** Shared chrome for the standalone info pages (/privacy and /guide). */
+  pages: {
+    eyebrow: "learnthe.world",
+    back: "Back to the world",
+    backAria: "Back to the game",
+    toPrivacy: "Privacy policy",
+    toGuide: "Usability guide",
+  },
+
+  privacyPage: {
+    docTitle: "Privacy policy · learnthe.world",
+    title: "Privacy policy",
+    effective: "Effective 21 July 2026",
+    intro:
+      "learnthe.world is a free geography game. You can play it fully without an account, and it collects the minimum it needs to run. This page explains what is stored, where it lives, and the choices you have.",
+    pledge: {
+      title: "We do not sell your data.",
+      body: "No ads, no trackers, no analytics scripts, no data brokers. Your progress exists for one purpose: the game.",
+    },
+    guest: {
+      title: "Playing as a guest",
+      body: "Without an account, your progress never leaves your browser. Settings, passport stamps, scores and guess history live in local storage on your device.",
+      points: [
+        "Nothing is uploaded and no profile is created",
+        "Viewing the global high scores downloads scores only; it sends none of your data",
+        "Clearing your browser data erases guest progress",
+      ],
+    },
+    account: {
+      title: "If you create an account",
+      body: "Signing in stores your game data in our database so it can follow you across devices. We keep:",
+      points: [
+        "Your email address, used only to sign you in",
+        "A display name you choose",
+        "Game progress: settings, passport stamps, lifetime stats and finished rounds, including which countries you guessed",
+        "Your best scores for the leaderboards",
+      ],
+      after:
+        "Sign-in uses one time email codes or your Google, GitHub or Apple account, so there is no password to store or to leak. Those providers share only your name and email with us.",
+    },
+    storage: {
+      title: "Where your data lives",
+      body: "Member data is kept in a managed database (Supabase, on Postgres). Every table is protected by row level security, so your rows can be read by your signed-in session only. All traffic is encrypted over HTTPS. Like any web service, requests include your IP address; we use it for nothing beyond serving the request.",
+    },
+    visible: {
+      title: "What other players see",
+      body: "Only what the high score board shows: your display name, score, correct answers and the date. The display name is up to you and can be changed at any time. Nothing else is public.",
+    },
+    cookies: {
+      title: "Cookies and local storage",
+      body: "There are no advertising or analytics cookies. The site uses browser local storage for two things: your game progress, and for members the token that keeps you signed in.",
+    },
+    rights: {
+      title: "Your choices and rights",
+      points: [
+        "Play as a guest; an account is never required",
+        "Change your display name in the game at any time",
+        "Sign out on any device",
+        "Ask for a copy of your data, or ask us to delete your account",
+      ],
+      after:
+        "Deleting your account removes your profile, settings, stats, rounds, passport and leaderboard entries with it.",
+    },
+    children: {
+      title: "Young players",
+      body: "The game is built to be safe for young learners. No account is needed to play, so no personal data is needed either. Creating an account requires an email address; players under the age of digital consent in their region should ask a parent or guardian.",
+    },
+    changes: {
+      title: "Changes to this policy",
+      body: "If this policy changes, the new version appears here with a new effective date. The promises above will not be weakened quietly.",
+    },
+    contact: {
+      title: "Contact",
+      body: "learnthe.world is built and cared for by digital-knight.au. For privacy questions, data requests or deletion, get in touch through",
+      linkLabel: "digital-knight.au",
+    },
+  },
+
+  guidePage: {
+    docTitle: "Usability guide · learnthe.world",
+    title: "Usability guide",
+    intro: "How to play, every control, and how to make the game fit you.",
+    round: {
+      title: "How a round works",
+      points: [
+        "A country name appears at the top. Find it and pin it on the world.",
+        "Anywhere inside the country counts; landing nearer its heart earns a little more.",
+        "A miss tells you how far away you were, and a glowing ring points the way.",
+        "Out of tries? The country lights up and reveals itself, so you learn it for next time.",
+      ],
+    },
+    touch: {
+      title: "Touch",
+      points: [
+        "Drag to spin the world",
+        "Pinch to zoom",
+        "Tap to drop your pin",
+        "Ocean taps are free; they never cost a try",
+      ],
+    },
+    mouse: {
+      title: "Mouse",
+      points: [
+        "Drag to spin the world",
+        "Scroll to zoom during play",
+        "Click to drop your pin",
+        "On the menu, scrolling glides down to the site footer",
+      ],
+    },
+    keyboard: {
+      title: "Keyboard",
+      intro: "The whole game plays without a mouse.",
+      keys: [
+        { k: "← ↑ ↓ →", label: "Glide the map" },
+        { k: "+ / −", label: "Zoom in and out" },
+        { k: "Enter", label: "Drop your pin at the crosshair" },
+        { k: "H", label: "Use a hint" },
+        { k: "S", label: "Skip this country" },
+        { k: "Esc", label: "Pause, or close any sheet" },
+      ],
+    },
+    scoring: {
+      title: "Scoring",
+      points: [
+        "Right answers build a streak, and streaks multiply your points",
+        "Quick answers earn a speed bonus (optional, in Settings)",
+        "Pinning near the centre of a country tops up the score",
+        "First-ever finds pay a discovery bonus and stamp your passport",
+      ],
+    },
+    hints: {
+      title: "Hints",
+      body: "Up to three hints per country, each stronger than the last: population, then capital and flag, then continent. Hints trim a little from your points, so they help you learn without leaning on them.",
+    },
+    menuTour: {
+      title: "Around the menu",
+      points: [
+        "Tap a continent on the globe to play just that region; tap it again for the whole world",
+        "Explore the map: a pressure-free mode for wandering and reading about countries",
+        "Passport: every country you have discovered so far",
+        "High scores: this device's board plus the global boards",
+        "Worlds and Pins: recolour the planet and pick your marker",
+      ],
+    },
+    colourVision: {
+      title: "Colour vision",
+      body: "Two worlds are tuned for colour blindness: Signal Tide (safe for red-green) and Inkstone (readable with any colour vision). Pick them under Worlds in the game. High contrast, set below, stacks with every world.",
+    },
+    announce: {
+      title: "Screen readers",
+      body: "Every prompt, result and discovery is announced through a live region, and every control is labelled. The tutorial, all sheets and the whole game are reachable by keyboard.",
+    },
+    tutorial: {
+      title: "The tour",
+      body: "Your first Play offers a 20 second tour. Replay it any time from Settings, under Help.",
+    },
+    controls: {
+      title: "Make it fit you",
+      intro: "These controls are live. Flip them here and the game changes with you.",
+      saveNote:
+        "Changes apply instantly and are saved in this browser. To keep your settings on every device, create a free account from the menu in the game.",
+    },
   },
 
   loading: "Charting the oceans…",

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { STR } from "../content/strings";
 import { formatPoints } from "../game/scoring";
 import { REGIONS, regionPool, type Region, type World } from "../lib/geo";
@@ -28,7 +28,12 @@ interface MenuProps {
   onThemes: () => void;
   onPins: () => void;
   onAccount: () => void;
+  /** Reports the clear band between the title and Play, for framing the globe. */
+  onBand?: (band: { top: number; bottom: number }) => void;
 }
+
+/** Air between the globe and the chrome it is framed by, px. */
+const BAND_GAP = 10;
 
 /**
  * Home: title at the top, the world in the middle, Play at the bottom, and
@@ -40,6 +45,43 @@ export function Menu(props: MenuProps): JSX.Element {
   // Fresh on every visit to the menu (the component remounts per screen change).
   const [stats] = useState(loadStats);
 
+  // The globe belongs to the gap between the title and Play. Measure it rather
+  // than guess: the masthead grows with the root font size, with a long
+  // tagline, and with whatever a font swap does to the wordmark.
+  const mastheadRef = useRef<HTMLElement>(null);
+  const dockRef = useRef<HTMLElement>(null);
+  const { onBand } = props;
+  useLayoutEffect(() => {
+    const head = mastheadRef.current;
+    const dock = dockRef.current;
+    if (!head || !dock || !onBand) return;
+    const measure = (): void => {
+      // Layout boxes, not getBoundingClientRect: the dock arrives on a
+      // tide-up transform, and a rect taken mid-flight sits 44px low — the
+      // globe would be fitted to a band that shrinks when the animation
+      // lands, then visibly re-fit on the next measure. offsetTop ignores
+      // transforms, and the fixed full-viewport .menu is the offset parent,
+      // so these are viewport coordinates at rest.
+      onBand({
+        top: Math.max(0, head.offsetTop + head.offsetHeight + BAND_GAP),
+        bottom: Math.max(0, window.innerHeight - dock.offsetTop + BAND_GAP),
+      });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(head);
+    ro.observe(dock);
+    window.addEventListener("resize", measure);
+    // The map canvas is fixed to the viewport, so the band is viewport-relative
+    // too: re-measure if the page under it ever scrolls.
+    window.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure);
+    };
+  }, [onBand]);
+
   const counts = useMemo(() => {
     const m = {} as Record<Region, number>;
     for (const r of REGIONS) m[r] = regionPool(props.world, r).length;
@@ -50,7 +92,7 @@ export function Menu(props: MenuProps): JSX.Element {
 
   return (
     <div className="screen menu">
-      <header className="menu-masthead">
+      <header className="menu-masthead" ref={mastheadRef}>
         <div className="wordmark">
           <p className="eyebrow">{STR.eyebrow}</p>
           <h1>{STR.wordmark}</h1>
@@ -114,7 +156,7 @@ export function Menu(props: MenuProps): JSX.Element {
         <AccountBadge account={props.account} onOpen={props.onAccount} />
       </nav>
 
-      <section className="dock" aria-label={STR.menu.startAria}>
+      <section className="dock" ref={dockRef} aria-label={STR.menu.startAria}>
         {/* Pointer users pick a continent on the globe itself; this hidden
             select is the keyboard / screen-reader path to the same choice. */}
         <label className="sr-only" htmlFor="region-select">

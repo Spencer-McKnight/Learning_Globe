@@ -77,10 +77,11 @@
   /* one column width for every screen's content; phones ignore it */
   --content-max: 1120px;
 
-  /* stacking scale — map floor, map-anchored labels, chrome, then sheets */
+  /* stacking scale — map floor, map-anchored labels, chrome, footer, sheets */
   --z-map: 0;
   --z-map-label: 1;
   --z-ui: 10;
+  --z-footer: 20; /* rises over the menu chrome as the page scrolls */
   --z-sheet-backdrop: 100;
   --z-sheet: 101;
 
@@ -237,6 +238,167 @@ input {
 
 .screen > * {
   pointer-events: auto;
+}
+
+/* ---------- site footer — the page beneath the world (menu only) ---------- */
+
+/* The stage is fixed and full-viewport; the footer is the only element in
+   normal document flow, pushed one viewport down. On the menu the engine
+   releases the scroll wheel (MapEngine.setWheelZoom), so the page scrolls and
+   the footer rises over the fixed stage. flow-root keeps that viewport-tall
+   margin from collapsing through .app onto <body>. */
+.app {
+  display: flow-root;
+}
+
+.site-footer {
+  position: relative;
+  z-index: var(--z-footer);
+  margin-top: 100vh;
+  margin-top: 100dvh;
+  /* The planet's limb seen from underneath: a shallow curved horizon carrying
+     a thin line of atmosphere light. */
+  border-top-left-radius: 50% 2.75rem;
+  border-top-right-radius: 50% 2.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-accent) 5%, var(--color-bg)),
+    var(--color-bg) 46%
+  );
+  box-shadow:
+    0 -10px 32px color-mix(in srgb, var(--color-accent) 7%, transparent),
+    0 -30px 90px var(--color-scrim);
+}
+
+.site-footer-inner {
+  max-width: var(--content-max);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-5);
+  padding: var(--sp-6) var(--sp-4);
+  padding-bottom: max(var(--sp-5), env(safe-area-inset-bottom));
+}
+
+.site-footer-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.site-footer-brand p {
+  margin: 0;
+}
+
+.site-footer-wordmark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--fs-lg);
+  line-height: 1.05;
+  color: var(--color-text);
+}
+
+.site-footer-mission {
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+  max-width: 24rem;
+}
+
+/* the footer's one filled action: pass the world on. Ghost pill in the app's
+   button language; the clipboard fallback flips it to the success token for a
+   beat, so the feedback lands where the tap did. */
+.footer-share {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--tap);
+  padding: 0 var(--sp-5);
+  border-radius: var(--r-pill);
+  border: var(--stroke) solid var(--color-border);
+  background: var(--color-panel);
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-md);
+  transition:
+    border-color 0.18s,
+    color 0.18s,
+    transform 0.15s var(--ease-pop);
+}
+
+.footer-share:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.footer-share:active {
+  transform: scale(0.96);
+}
+
+.footer-share.is-copied {
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.footer-share svg {
+  flex-shrink: 0;
+}
+
+.site-footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2) var(--sp-3);
+}
+
+.footer-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-pill);
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-md);
+  text-decoration: none;
+}
+
+.footer-link:hover {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.35em;
+}
+
+.site-footer-base {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-2);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+
+.site-footer-byline {
+  color: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+  text-decoration-color: color-mix(in srgb, var(--color-text-muted) 45%, transparent);
+}
+
+.site-footer-byline:hover {
+  color: var(--color-accent);
+  text-decoration-color: currentColor;
 }
 
 /* ---------- buttons + chips ---------- */
@@ -2226,6 +2388,34 @@ input {
   background: var(--color-success);
 }
 
+/* Miniature mission card — the tour's stand-in for the in-game prompt. */
+.tutorial-card .tutorial-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--color-panel);
+  border: var(--stroke) solid var(--color-border);
+  border-radius: var(--r-md);
+}
+
+.tutorial-card .tutorial-chip .find {
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-indent: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.tutorial-card .tutorial-chip .target {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--fs-md);
+  line-height: 1.2;
+}
+
 .tutorial-card .row {
   display: flex;
   gap: var(--sp-2);
@@ -2369,6 +2559,272 @@ input {
   to {
     opacity: 1;
   }
+}
+
+/* ============================================================
+   info pages — /privacy and /guide. Real documents, not app screens:
+   normal flow, selectable text, and a bento grid of blocks so each
+   idea gets its own card. Body copy stays --color-text on panel
+   surfaces (not muted) — these pages are for reading. */
+
+.info-page {
+  position: relative;
+  z-index: var(--z-ui);
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: var(--sp-5) var(--sp-4) var(--sp-6);
+  user-select: text;
+  animation: mist-in var(--dur-mist) var(--ease-mist) both;
+}
+
+.info-home {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-pill);
+  border: var(--stroke) solid var(--color-border);
+  background: var(--color-panel);
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  text-decoration: none;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.info-home:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.info-hero {
+  padding: var(--sp-5) 0 var(--sp-5);
+}
+
+.info-eyebrow {
+  margin: var(--sp-5) 0 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.info-hero h1 {
+  margin: var(--sp-1) 0 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2.2rem, 8vw, 3.4rem);
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+}
+
+.info-meta {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.info-lede {
+  margin: var(--sp-3) 0 0;
+  max-width: 46ch;
+  font-size: var(--fs-lg);
+  line-height: 1.5;
+}
+
+/* ---------- the block grid ---------- */
+
+.info-blocks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+  gap: var(--sp-4);
+}
+
+.info-block {
+  --info-tone: var(--color-accent);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+  border-radius: var(--r-lg);
+  border: var(--stroke) solid var(--color-border);
+  border-top: 3px solid color-mix(in srgb, var(--info-tone) 55%, transparent);
+  background: var(--color-panel);
+}
+
+.info-block--success {
+  --info-tone: var(--color-success);
+}
+
+.info-block--reward {
+  --info-tone: var(--color-reward);
+}
+
+.info-block--danger {
+  --info-tone: var(--color-danger);
+}
+
+.info-block--wide {
+  grid-column: 1 / -1;
+}
+
+.info-block-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.info-badge {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--info-tone) 16%, transparent);
+  color: var(--info-tone);
+}
+
+.info-block h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--fs-lg);
+  line-height: 1.2;
+}
+
+/* The page's one shout — the pledge on /privacy. */
+.info-block--statement h2 {
+  font-size: clamp(1.5rem, 5.5vw, 2.1rem);
+}
+
+.info-block--statement p {
+  max-width: 60ch;
+}
+
+.info-block p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.info-block a {
+  color: var(--color-accent);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.info-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.info-list li {
+  position: relative;
+  padding-left: 1.2em;
+  line-height: 1.5;
+}
+
+.info-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.52em;
+  width: 0.45em;
+  height: 0.45em;
+  border-radius: 50%;
+  background: var(--info-tone);
+}
+
+/* ---------- keyboard reference (guide) ---------- */
+
+.info-keys {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.info-keys li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.info-keys kbd {
+  flex-shrink: 0;
+  min-width: 4.6em;
+  padding: 0.2em 0.6em;
+  border-radius: var(--r-sm);
+  border: var(--stroke) solid var(--color-border);
+  border-bottom-width: 3px;
+  background: var(--color-well);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* ---------- live settings panel (guide) ---------- */
+
+.info-controls {
+  border-top: 1px solid var(--color-border);
+}
+
+.info-controls .set-row:last-child {
+  border-bottom: none;
+}
+
+.info-note {
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  border-left: 4px solid var(--color-reward);
+  background: color-mix(in srgb, var(--color-reward) 10%, transparent);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+
+/* ---------- page footer ---------- */
+
+.info-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3) var(--sp-5);
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
+.info-foot nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-5);
+}
+
+.info-foot a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.info-foot a:hover {
+  color: var(--color-accent);
 }
 
 /* reduced motion: kill decorative animation, keep instant state changes */

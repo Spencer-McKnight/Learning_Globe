@@ -89,6 +89,45 @@ interface FlyAnim {
   k1: number;
 }
 
+/**
+ * Chrome the map must stay clear of, in px per edge. The map is fitted and
+ * centered inside what's left, so the menu can frame the globe in the gap
+ * between the title and the Play button instead of running underneath them.
+ */
+export interface ViewInsets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+const NO_INSETS: ViewInsets = { top: 0, right: 0, bottom: 0, left: 0 };
+
+interface InsetAnim {
+  from: ViewInsets;
+  to: ViewInsets;
+  born: number;
+  dur: number;
+}
+
+function insetsEqual(a: ViewInsets, b: ViewInsets): boolean {
+  return (
+    Math.abs(a.top - b.top) < 0.5 &&
+    Math.abs(a.right - b.right) < 0.5 &&
+    Math.abs(a.bottom - b.bottom) < 0.5 &&
+    Math.abs(a.left - b.left) < 0.5
+  );
+}
+
+function lerpInsets(a: ViewInsets, b: ViewInsets, t: number): ViewInsets {
+  return {
+    top: a.top + (b.top - a.top) * t,
+    right: a.right + (b.right - a.right) * t,
+    bottom: a.bottom + (b.bottom - a.bottom) * t,
+    left: a.left + (b.left - a.left) * t,
+  };
+}
+
 /** Approximate horizontal px-per-radian factor relative to projection.scale(). */
 const X_FACTOR: Record<ProjectionId, number> = {
   globe: 1,
@@ -98,6 +137,8 @@ const X_FACTOR: Record<ProjectionId, number> = {
 };
 
 const MAX_LAT_MERCATOR = 84;
+/** Mercator y at that latitude, in projection units — the half-height at scale 1. */
+const MERCATOR_Y_MAX = Math.log(Math.tan(Math.PI / 4 + (MAX_LAT_MERCATOR * Math.PI) / 360));
 /* Tap vs drag. Generous on both axes: a deliberate thumb press on a small
    country rests longer and wobbles more than a mouse click, and a rejected
    tap reads as the app ignoring you. */
@@ -106,6 +147,8 @@ const TAP_MAX_MS = 900;
 /** Idle drift: cruising speed, and how long the world takes to reach it. */
 const AMBIENT_DEG_PER_S = 3.2;
 const AMBIENT_SPINUP_MS = 2600;
+/** Ceiling on the small-frame drift compensation (see `ambientRateScale`). */
+const AMBIENT_FRAMED_MAX = 1.6;
 /**
  * Drag feel. The globe turns a little faster than the finger (1:1 makes
  * crossing an ocean a chore on a phone), and a released drag keeps gliding
@@ -123,6 +166,10 @@ const FLING_MIN_PX_S = 14;
 const FLING_GRACE_MS = 90;
 /** Outer zoom-out bound only — view always initialises / resets at k=1 (fitted). */
 const MIN_K = 0.675;
+/** Breathing room between the fitted map and the edges of its frame, px. */
+const FIT_PAD = 8;
+/** Chrome may never squeeze the map below this, whatever insets it asks for. */
+const MIN_FRAME_PX = 140;
 /** Shared radius for miss direction ring + pin-drop sonar expand. */
 export const INDICATOR_RING_R = 50;
 
@@ -142,6 +189,11 @@ export class MapEngine {
   private dpr = 1;
   private baseScale = 100;
   private worldHeightK1 = 0; // projected map height in px at k=1 (flat modes)
+  /** Chrome the map keeps clear of, and the ease between two framings. */
+  private insets: ViewInsets = { ...NO_INSETS };
+  private insetAnim: InsetAnim | null = null;
+  /** Sphere bounds at scale 1 for the current projection — keeps refit analytic. */
+  private fitUnit: { w: number; h: number } | null = null;
 
   /** Geographic point at the view center. */
   private center: LonLat = [12, 18];
@@ -150,6 +202,8 @@ export class MapEngine {
 
   private interactive = false;
   private ambient = false;
+  /** When false (menu), plain wheel scroll belongs to the page, not the zoom. */
+  private wheelZoomOn = true;
   /** When the current ambient spell began, for the spin-up ramp. */
   private ambientSince = 0;
   /** The player took the wheel: no more idle drift until ambient restarts. */
@@ -263,54 +317,89 @@ export class MapEngine {
     return p;
   }
 
-  private refit(): void {
-    const w = this.width;
-    const h = this.height;
-    if (w === 0 || h === 0) return;
-    const pad = 8;
+  /**
+   * Sphere bounds at scale 1, measured once per projection. Fitting is then
+   * pure arithmetic, which matters because an inset ease re-fits every frame
+   * (a `fitExtent` per frame would re-walk the sphere outline each time).
+   */
+  private measureFitUnit(): { w: number; h: number } {
+    const p = this.makeProjection();
+    const s = 1000; // measure big: adaptive resampling is sloppy at scale 1
+    p.scale(s).translate([0, 0]).rotate([0, 0, 0]);
+    const b = geoPath(p).bounds({ type: "Sphere" });
+    return { w: (b[1][0] - b[0][0]) / s, h: (b[1][1] - b[0][1]) / s };
+  }
 
+  /**
+   * The rect the map lives in: the canvas minus its insets, as
+   * `[x0, y0, width, height]`. Insets are clamped so no amount of chrome can
+   * squeeze the map away entirely.
+   */
+  private frameRect(): [number, number, number, number] {
+    const { width: w, height: h } = this;
+    const i = this.insets;
+    const minW = Math.min(MIN_FRAME_PX, w);
+    const minH = Math.min(MIN_FRAME_PX, h);
+    const sx = i.left + i.right > w - minW ? Math.max(0, w - minW) / (i.left + i.right) : 1;
+    const sy = i.top + i.bottom > h - minH ? Math.max(0, h - minH) / (i.top + i.bottom) : 1;
+    const left = i.left * sx;
+    const top = i.top * sy;
+    return [left, top, w - left - i.right * sx, h - top - i.bottom * sy];
+  }
+
+  /** Where the map is centered on screen — the middle of the frame, not the canvas. */
+  private viewCenter(): [number, number] {
+    const [x, y, w, h] = this.frameRect();
+    return [x + w / 2, y + h / 2];
+  }
+
+  /** The k=1 scale that fits the world into a viewport of this size. */
+  private fitScale(w: number, h: number): number {
+    const iw = Math.max(1, w - FIT_PAD * 2);
+    const ih = Math.max(1, h - FIT_PAD * 2);
+    // Mercator's sphere is unbounded, so its ±84° band is fitted by hand.
     if (this.projType === "mercator") {
-      // Fit the ±84° band by hand — the sphere is unbounded under Mercator.
-      const yMax = Math.log(Math.tan(Math.PI / 4 + (MAX_LAT_MERCATOR * Math.PI) / 360));
-      this.baseScale = Math.min((w - pad * 2) / (2 * Math.PI), (h - pad * 2) / (2 * yMax));
-      this.worldHeightK1 = 2 * yMax * this.baseScale;
-    } else {
-      this.projection = this.makeProjection();
-      this.projection.fitExtent(
-        [
-          [pad, pad],
-          [w - pad, h - pad],
-        ],
-        { type: "Sphere" }
-      );
-      this.baseScale = this.projection.scale();
-      if (this.projType !== "globe") {
-        const b = geoPath(this.projection).bounds({ type: "Sphere" });
-        this.worldHeightK1 = b[1][1] - b[0][1];
-      }
+      return Math.min(iw / (2 * Math.PI), ih / (2 * MERCATOR_Y_MAX));
+    }
+    if (!this.fitUnit) this.fitUnit = this.measureFitUnit();
+    return Math.max(1, Math.min(iw / this.fitUnit.w, ih / this.fitUnit.h));
+  }
+
+  private refit(): void {
+    if (this.width === 0 || this.height === 0) return;
+    const [, , fw, fh] = this.frameRect();
+    this.baseScale = this.fitScale(fw, fh);
+    if (this.projType === "mercator") {
+      this.worldHeightK1 = 2 * MERCATOR_Y_MAX * this.baseScale;
+    } else if (this.projType !== "globe") {
+      this.worldHeightK1 = (this.fitUnit?.h ?? 0) * this.baseScale;
     }
     this.apply();
   }
 
   private apply(): void {
     const p = this.projection;
+    const [fx, fy, fw, fh] = this.frameRect();
+    const [cx, cy] = [fx + fw / 2, fy + fh / 2];
     p.scale(this.baseScale * this.k);
     if (this.projType === "globe") {
       p.rotate([-this.center[0], -this.center[1], 0]);
-      p.translate([this.width / 2, this.height / 2]);
+      p.translate([cx, cy]);
     } else {
       this.clampPanY();
       p.rotate([-this.center[0], 0, 0]);
-      p.translate([this.width / 2, this.height / 2 + this.panY]);
+      p.translate([cx, cy + this.panY]);
+      // Flat maps are clipped to their frame, so a framed map stays inside it
+      // rather than bleeding under the chrome it was asked to avoid.
       p.clipExtent([
-        [0, 0],
-        [this.width, this.height],
+        [fx, fy],
+        [fx + fw, fy + fh],
       ]);
     }
     this.path = geoPath(p, this.ctx);
     this.dirty = true;
     // Keep the crosshair country lit the same way mouse hover does.
-    if (this.crosshairOn && this.interactive) this.hoverAt([this.width / 2, this.height / 2]);
+    if (this.crosshairOn && this.interactive) this.hoverAt([cx, cy]);
     // Ambient spin drifts land under a resting cursor; keep the lit continent
     // honest. Not while the player is steering, though: re-testing a stale
     // cursor point against fast-moving land lights continents nowhere near
@@ -327,7 +416,8 @@ export class MapEngine {
   }
 
   private clampPanY(): void {
-    const allowed = Math.max(0, (this.worldHeightK1 * this.k) / 2 - this.height / 2 + 32);
+    const fh = this.frameRect()[3];
+    const allowed = Math.max(0, (this.worldHeightK1 * this.k) / 2 - fh / 2 + 32);
     this.panY = Math.max(-allowed, Math.min(allowed, this.panY));
   }
 
@@ -364,15 +454,55 @@ export class MapEngine {
     if (type === this.projType) return;
     this.projType = type;
     this.panY = 0;
+    this.fitUnit = null;
     this.projection = this.makeProjection();
     this.refit();
+  }
+
+  /**
+   * Frame the map inside a sub-rect of the canvas, easing there over `dur` ms.
+   * Omitted edges mean zero, so `setViewInsets({})` hands the map the whole
+   * screen back. The ease re-fits every frame, so the map grows and re-centers
+   * together — the "pan in" when a round starts is this plus a zoom.
+   */
+  setViewInsets(next: Partial<ViewInsets>, dur = 0): void {
+    const to: ViewInsets = { ...NO_INSETS, ...next };
+    if (insetsEqual(to, this.insetAnim?.to ?? this.insets)) return;
+    if (dur <= 0 || this.reduceMotion) {
+      this.insetAnim = null;
+      this.insets = to;
+      this.refit();
+      return;
+    }
+    this.insetAnim = { from: { ...this.insets }, to, born: performance.now(), dur };
   }
 
   setInteractive(on: boolean): void {
     this.interactive = on;
     if (!on) this.setHover(null);
-    else if (this.crosshairOn) this.hoverAt([this.width / 2, this.height / 2]);
+    else if (this.crosshairOn) this.hoverAt(this.viewCenter());
     this.canvas.style.cursor = on ? "grab" : "default";
+  }
+
+  /**
+   * Whether a plain wheel scroll zooms the world. The menu hands the wheel
+   * back to the page — scrolling there travels down to the site footer — while
+   * a ctrl-wheel (trackpad pinch) always reads as deliberate zoom intent.
+   */
+  setWheelZoom(on: boolean): void {
+    this.wheelZoomOn = on;
+  }
+
+  /**
+   * Drift is felt as pixels travelling at the limb, not degrees per second: the
+   * same spin on a globe the menu has framed small reads as slower, and on a
+   * desktop the framing takes nearly 40% of it. Hand that back, capped, so the
+   * idle rotation stays as legible as it was when the globe was full-bleed.
+   */
+  private ambientRateScale(): number {
+    const unframed = this.fitScale(this.width, this.height);
+    if (this.baseScale <= 0) return 1;
+    return Math.max(1, Math.min(AMBIENT_FRAMED_MAX, unframed / this.baseScale));
   }
 
   /**
@@ -418,7 +548,7 @@ export class MapEngine {
   setCrosshair(on: boolean): void {
     this.crosshairOn = on;
     this.dirty = true;
-    if (on && this.interactive) this.hoverAt([this.width / 2, this.height / 2]);
+    if (on && this.interactive) this.hoverAt(this.viewCenter());
     else if (!on) this.setHover(null);
   }
 
@@ -475,7 +605,7 @@ export class MapEngine {
 
   zoomBy(factor: number, about?: [number, number]): void {
     const maxK = this.projType === "globe" ? 14 : 18;
-    const pivot = about ?? ([this.width / 2, this.height / 2] as [number, number]);
+    const pivot = about ?? this.viewCenter();
     if (this.reduceMotion) {
       this.zoomAbout(factor, pivot);
       this.stopAmbient();
@@ -504,7 +634,7 @@ export class MapEngine {
   setZoomKey(dir: ZoomDir, pressed: boolean): void {
     this.nav.setZoomKey(dir, pressed);
     if (pressed) {
-      this.zoomPivot = [this.width / 2, this.height / 2];
+      this.zoomPivot = this.viewCenter();
       this.fly = null;
       this.stopAmbient();
     }
@@ -545,7 +675,7 @@ export class MapEngine {
   }
 
   centerLonLat(): LonLat | null {
-    return this.invert([this.width / 2, this.height / 2]);
+    return this.invert(this.viewCenter());
   }
 
   screenOf(lonlat: LonLat): [number, number] | null {
@@ -575,12 +705,28 @@ export class MapEngine {
     };
   }
 
+  /**
+   * Ease the zoom to an absolute level, leaving the centre where it is —
+   * the "close in a little" half of starting a round.
+   */
+  zoomTo(k: number, dur = 900): void {
+    const maxK = this.projType === "globe" ? 14 : 18;
+    const k1 = Math.max(MIN_K, Math.min(maxK, k));
+    const here = this.centerLonLat();
+    if (!here) {
+      this.k = k1;
+      this.apply();
+      return;
+    }
+    this.flyTo(here, { zoom: k1, dur });
+  }
+
   /** For flat maps, also move the vertical pan so the target row is centered. */
   private centerFlatOn(target: LonLat): void {
     this.apply();
     const p = this.projection([target[0], target[1]]);
     if (p) {
-      this.panY += this.height / 2 - p[1];
+      this.panY += this.viewCenter()[1] - p[1];
       this.apply();
     }
   }
@@ -724,7 +870,7 @@ export class MapEngine {
 
   confettiBurst(at?: [number, number], kind: ConfettiKind = "milestone"): void {
     if (this.reduceMotion) return;
-    const [cx, cy] = at ?? [this.width / 2, this.height / 2];
+    const [cx, cy] = at ?? this.viewCenter();
     const now = performance.now();
 
     if (kind === "discovery") {
@@ -987,6 +1133,8 @@ export class MapEngine {
   };
 
   private onWheel = (e: WheelEvent): void => {
+    // Menu mode: don't touch the event — the browser scrolls the page instead.
+    if (!this.wheelZoomOn && !e.ctrlKey) return;
     e.preventDefault();
     // Direct wheel input cancels eased keyboard zoom so they don't fight.
     this.nav.clearZoom();
@@ -1023,7 +1171,7 @@ export class MapEngine {
   // ------------------------------------------------------------------
 
   private hasActiveEffects(now: number): boolean {
-    if (this.fly) return true;
+    if (this.fly || this.insetAnim) return true;
     if (this.nav.active) return true;
     if (this.coasting) return true;
     if (this.ripples.length || this.particles.length || this.flashes.size) return true;
@@ -1036,6 +1184,19 @@ export class MapEngine {
     if (this.destroyed) return;
     const dt = Math.min(64, now - this.lastTime);
     this.lastTime = now;
+
+    // Re-framing runs first: it changes the fitted scale, so anything below
+    // that reads the camera this frame reads the new frame's numbers.
+    if (this.insetAnim) {
+      const a = this.insetAnim;
+      const t = Math.min(1, (now - a.born) / a.dur);
+      this.insets = lerpInsets(a.from, a.to, easeInOut(t));
+      if (t >= 1) {
+        this.insets = { ...a.to };
+        this.insetAnim = null;
+      }
+      this.refit();
+    }
 
     if (this.fly) {
       const t = Math.min(1, (now - this.fly.born) / this.fly.dur);
@@ -1051,7 +1212,7 @@ export class MapEngine {
       if (motion) {
         if (motion.zoom !== 1) {
           const pivot =
-            this.zoomPivot ?? ([this.width / 2, this.height / 2] as [number, number]);
+            this.zoomPivot ?? this.viewCenter();
           this.zoomAbout(motion.zoom, pivot);
         }
         if (motion.dx !== 0 || motion.dy !== 0) {
@@ -1093,7 +1254,7 @@ export class MapEngine {
       // Wind up from a standstill on a smoothstep, so the world leans into
       // its turn instead of snapping to full speed the moment you arrive.
       const t = Math.min(1, (now - this.ambientSince) / AMBIENT_SPINUP_MS);
-      const speed = AMBIENT_DEG_PER_S * t * t * (3 - 2 * t);
+      const speed = AMBIENT_DEG_PER_S * t * t * (3 - 2 * t) * this.ambientRateScale();
       this.center[0] += (dt / 1000) * speed;
       this.apply();
     }
@@ -1112,7 +1273,7 @@ export class MapEngine {
 
     // ocean
     if (this.projType === "globe") {
-      const [cx, cy] = [w / 2, h / 2];
+      const [cx, cy] = this.viewCenter();
       const r = this.baseScale * this.k;
       // atmosphere glow — faint and wide so it reads as air, not a rim light
       const glow = ctx.createRadialGradient(cx, cy, r * 0.9, cx, cy, r * 1.22);
@@ -1133,8 +1294,10 @@ export class MapEngine {
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.fill();
     } else if (this.projType === "mercator") {
+      // Mercator's sphere is unbounded, so its ocean is the frame itself.
+      const [fx, fy, fw, fh] = this.frameRect();
       ctx.fillStyle = pal.ocean;
-      ctx.fillRect(0, 0, w, h);
+      ctx.fillRect(fx, fy, fw, fh);
     } else {
       ctx.fillStyle = pal.ocean;
       ctx.beginPath();
@@ -1334,7 +1497,7 @@ export class MapEngine {
 
     // keyboard crosshair
     if (this.crosshairOn) {
-      const [cx, cy] = [w / 2, h / 2];
+      const [cx, cy] = this.viewCenter();
       const u = this.uiScale;
       ctx.strokeStyle = pal.crosshair;
       ctx.lineWidth = 1.8 * u;

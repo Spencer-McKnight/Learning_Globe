@@ -20,7 +20,7 @@ interface SettingsSheetProps {
   onOpenPins: () => void;
 }
 
-function Toggle({
+export function Toggle({
   label,
   sub,
   checked,
@@ -48,7 +48,7 @@ function Toggle({
   );
 }
 
-function Seg<T extends string | number>({
+export function Seg<T extends string | number>({
   label,
   value,
   options,
