@@ -9,6 +9,7 @@ import "@fontsource/nunito/800.css";
 import "./styles/theme.css";
 import App from "./App";
 import { GuidePage } from "./components/GuidePage";
+import { NotFoundPage } from "./components/NotFoundPage";
 import { PrivacyPage } from "./components/PrivacyPage";
 import { GUEST_ACCOUNT, watchAccount, type Account } from "./lib/account";
 import { setActiveAccount } from "./lib/storage";
@@ -42,6 +43,9 @@ function Root(): JSX.Element {
   // Keyed like App: the guide's live settings panel must re-read the right
   // storage bucket when the session lands.
   if (path === "/guide") return <GuidePage key={accountKey} account={account} />;
+  // The host rewrites every path to this bundle, so unknown addresses land
+  // here too — name the wrong turn instead of silently loading the game.
+  if (path !== "/") return <NotFoundPage />;
 
   return <App key={accountKey} account={account} />;
 }

@@ -539,6 +539,15 @@ export const STR = {
     },
   },
 
+  notFoundPage: {
+    docTitle: "Uncharted territory · learnthe.world",
+    codeAria: "Error 404, page not found",
+    title: "Uncharted territory",
+    lede: "This page isn't on any of our maps. The address may be mistyped, or the page may have sailed on without leaving a forwarding port.",
+    pathIntro: "You charted a course for",
+    home: "Back to the world",
+  },
+
   loading: "Charting the oceans…",
   loadError: "The map couldn't load. Check your connection and refresh.",
 } as const;

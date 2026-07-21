@@ -2928,6 +2928,138 @@ input {
   color: var(--color-accent);
 }
 
+/* ---------- 404 — uncharted territory ----------
+   One centred moment on the info-page chrome: the compass plays the
+   zero in "404", wandering like a needle with no north. */
+
+.nf-page {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.nf-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  max-width: 36rem;
+  padding: var(--sp-5) 0;
+  text-align: center;
+}
+
+.nf-code {
+  display: flex;
+  align-items: center;
+  gap: 0.08em;
+  margin: var(--sp-2) 0 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(4.4rem, 22vw, 7rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--color-accent);
+}
+
+.nf-compass {
+  display: grid;
+  place-items: center;
+  width: 0.82em;
+  height: 0.82em;
+}
+
+.nf-compass svg {
+  width: 100%;
+  height: 100%;
+  animation: nf-wander 7s ease-in-out infinite;
+}
+
+@keyframes nf-wander {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  30% {
+    transform: rotate(140deg);
+  }
+  55% {
+    transform: rotate(60deg);
+  }
+  80% {
+    transform: rotate(210deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nf-compass svg {
+    animation: none;
+  }
+}
+
+.nf-page h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1.8rem, 7vw, 2.6rem);
+  line-height: 1.1;
+}
+
+.nf-page .info-lede {
+  margin: 0;
+}
+
+.nf-path {
+  margin: 0;
+  max-width: 100%;
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+}
+
+.nf-path code {
+  display: inline-block;
+  max-width: 16em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  padding: 0.1em 0.5em;
+  border-radius: var(--r-sm);
+  border: var(--stroke) solid var(--color-border);
+  background: var(--color-well);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.nf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+
+.nf-cta {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0 var(--sp-5);
+  border-radius: var(--r-pill);
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  text-decoration: none;
+  transition: filter 0.2s;
+}
+
+.nf-cta:hover {
+  filter: brightness(1.08);
+}
+
 /* reduced motion: kill decorative animation, keep instant state changes */
 body.reduce-motion *,
 body.reduce-motion *::before,
