@@ -79,7 +79,15 @@ export function Hud({
   const outcomeCountry = o ? world.countries[o.countryId] : null;
   const isReveal = o !== null && o.kind !== "correct";
   const showingReveal = isReveal && gs.phase === "feedback";
-  const heat = gs.streak >= 6 ? "is-blazing" : gs.streak >= 3 ? "is-hot" : "";
+  // heat ladder: calm → hot at ×8 (streak 3) → blazing at ×64 → mythic at ×512
+  const heat =
+    gs.streak >= 9
+      ? "is-mythic"
+      : gs.streak >= 6
+        ? "is-blazing"
+        : gs.streak >= 3
+          ? "is-hot"
+          : "";
 
   // Points landing: a rising +N and a puff of sparks, keyed so each gain
   // replays its own animation instead of inheriting the last one's.
@@ -154,10 +162,10 @@ export function Hud({
           >
             <div className={`hud-scoreboard ${heat} ${score !== gs.score ? "is-ticking" : ""}`}>
               <span className="score-num">{formatPoints(score)}</span>
+              <span className={`streak-mult${mult === 1 ? " is-one" : ""}`} key={mult}>
+                ×{mult.toLocaleString()}
+              </span>
             </div>
-            <span className="streak-chip" key={mult}>
-              ×{mult.toLocaleString()}
-            </span>
             {gain && (
               <>
                 <span

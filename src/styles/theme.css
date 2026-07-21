@@ -1037,30 +1037,20 @@ input {
   }
 }
 
-/* The score rig. The capsule holds nothing but the number, so a score
-   climbing from 1,000 to 8,000,000 stays dead-centre under the prompt; the
-   multiplier rides outside it on the right, free to swell and blaze without
-   ever shifting the digits. Both float in a relative row that also hosts the
-   rising +points and its sparks. */
+/* The score rig. The capsule holds the number dead-centre under the prompt;
+   the multiplier rides bare on the capsule's top-right shoulder like an
+   exponent, overflowing without ever shifting the digits. The row also hosts
+   the rising +points and its sparks. */
 .score-rig {
   position: relative;
-  /* equal 1fr gutters centre the capsule exactly; the chip starts in the
-     right gutter, so it can grow to ×2,048 without moving the digits */
-  display: grid;
-  /* minmax(0,…) so a ×2,048 chip overflows its gutter instead of widening it
-     and shoving the digits off-centre */
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: var(--sp-2);
+  display: flex;
+  justify-content: center;
   width: 100%;
   pointer-events: none;
 }
 
-.score-rig .hud-scoreboard {
-  grid-column: 2;
-}
-
 .hud-scoreboard {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1093,38 +1083,58 @@ input {
   scale: 1.12;
 }
 
-.streak-chip {
-  grid-column: 3;
-  justify-self: start;
-  display: inline-flex;
-  align-items: center;
-  min-height: 1.5rem;
-  padding: 0 var(--sp-2);
-  border-radius: var(--r-pill);
+/* The multiplier: bare digits stamped on the capsule's top-right shoulder,
+   tilted and slowly bobbing. The dark halo shadows keep it legible over
+   whatever ocean or landmass scrolls beneath it. */
+.streak-mult {
+  position: absolute;
+  left: calc(100% - 0.5rem);
+  bottom: calc(100% - 0.7rem);
+  rotate: 8deg;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
   font-variant-numeric: tabular-nums;
   line-height: 1;
   white-space: nowrap;
   color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
-  animation: mult-pop 0.5s var(--ease-pop);
-  transition: color 0.3s, background 0.3s, border-color 0.3s;
+  text-shadow:
+    0 1px 2px var(--color-bg),
+    0 0 6px color-mix(in srgb, var(--color-bg) 80%, transparent),
+    0 0 14px color-mix(in srgb, var(--color-accent) 45%, transparent);
+  animation:
+    mult-stamp 0.5s var(--ease-pop),
+    mult-bob 2.4s var(--ease-mist) 0.5s infinite alternate;
+  transition: color 0.3s, text-shadow 0.3s, font-size 0.3s, opacity 0.3s;
 }
 
-/* streak heat: calm teal → aqua at ×8 (streak 3) → gold at ×64 (streak 6) */
+/* ×1 is a promise, not a prize — it waits quietly until the streak starts */
+.streak-mult.is-one {
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  opacity: 0.85;
+  text-shadow: 0 1px 2px var(--color-bg);
+}
+
+/* streak heat: calm teal → aqua at ×8 → gold at ×64 → prismatic at ×512.
+   Each rung swells the multiplier, hastens its bob and deepens the glow, so
+   a long run visibly climbs from ember to bonfire to something legendary. */
 .hud-scoreboard.is-hot {
   border-color: color-mix(in srgb, var(--color-success) 50%, transparent);
   box-shadow: 0 0 18px color-mix(in srgb, var(--color-success) 22%, transparent);
 }
 
-.score-rig.is-hot .streak-chip {
-  color: var(--color-text-inverse);
-  background: var(--color-success);
-  border-color: var(--color-success);
-  box-shadow: 0 0 14px color-mix(in srgb, var(--color-success) 45%, transparent);
+.hud-scoreboard.is-hot .streak-mult {
+  font-size: 1.15rem;
+  color: var(--color-success);
+  text-shadow:
+    0 1px 2px var(--color-bg),
+    0 0 6px color-mix(in srgb, var(--color-bg) 80%, transparent),
+    0 0 16px color-mix(in srgb, var(--color-success) 65%, transparent);
+}
+
+.hud-scoreboard.is-hot .score-num {
+  background-image: linear-gradient(135deg, var(--color-text) 0%, var(--color-success) 60%);
 }
 
 .hud-scoreboard.is-blazing {
@@ -1132,12 +1142,62 @@ input {
   box-shadow: 0 0 20px color-mix(in srgb, var(--color-reward) 28%, transparent);
 }
 
-.score-rig.is-blazing .streak-chip {
-  color: var(--color-text-inverse);
-  background: var(--color-reward);
-  border-color: var(--color-reward);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--color-reward) 60%, transparent);
-  animation: mult-pop 0.5s var(--ease-pop), mult-blaze 1.4s var(--ease-mist) 0.5s infinite alternate;
+.hud-scoreboard.is-blazing .streak-mult {
+  font-size: 1.3rem;
+  color: var(--color-reward);
+  text-shadow:
+    0 1px 2px var(--color-bg),
+    0 0 6px color-mix(in srgb, var(--color-bg) 80%, transparent),
+    0 0 18px color-mix(in srgb, var(--color-reward) 75%, transparent);
+  animation:
+    mult-stamp 0.5s var(--ease-pop),
+    mult-bob 1.8s var(--ease-mist) 0.5s infinite alternate,
+    mult-blaze 1.4s var(--ease-mist) 0.5s infinite alternate;
+}
+
+.hud-scoreboard.is-blazing .score-num {
+  background-image: linear-gradient(135deg, var(--color-success) 0%, var(--color-reward) 75%);
+}
+
+.hud-scoreboard.is-mythic {
+  border-color: color-mix(in srgb, var(--color-reward) 60%, var(--color-danger));
+  animation: capsule-surge 1.6s var(--ease-mist) infinite alternate;
+}
+
+.hud-scoreboard.is-mythic .streak-mult {
+  font-size: 1.45rem;
+  background-image: linear-gradient(
+    100deg,
+    var(--color-reward),
+    var(--color-danger),
+    var(--color-accent),
+    var(--color-reward)
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 1px 2px var(--color-bg))
+    drop-shadow(0 0 10px color-mix(in srgb, var(--color-reward) 55%, transparent));
+  animation:
+    mult-stamp 0.5s var(--ease-pop),
+    mult-bob 1.4s var(--ease-mist) 0.5s infinite alternate,
+    mult-blaze 1.1s var(--ease-mist) 0.5s infinite alternate,
+    score-prism 2.2s linear infinite;
+}
+
+.hud-scoreboard.is-mythic .score-num {
+  background-image: linear-gradient(
+    100deg,
+    var(--color-accent),
+    var(--color-success),
+    var(--color-reward),
+    var(--color-danger),
+    var(--color-accent)
+  );
+  background-size: 300% 100%;
+  animation: score-prism 2.6s linear infinite;
 }
 
 /* the points themselves, thrown up out of the capsule */
@@ -1159,6 +1219,16 @@ input {
 .score-delta.is-discovery {
   color: var(--color-reward);
   text-shadow: 0 0 12px color-mix(in srgb, var(--color-reward) 60%, transparent);
+}
+
+/* hauls grow with the heat — a ×64 gain should land heavier than a ×1 */
+.score-rig.is-hot .score-delta {
+  font-size: 1.45rem;
+}
+
+.score-rig.is-blazing .score-delta,
+.score-rig.is-mythic .score-delta {
+  font-size: 1.7rem;
 }
 
 /* a handful of sparks off the capsule — cheap, short, and never in the way */
@@ -1185,21 +1255,32 @@ input {
   background: var(--color-reward);
 }
 
-@keyframes mult-pop {
+/* the stamp slams in past its resting tilt, then settles back to 8deg */
+@keyframes mult-stamp {
   from {
-    opacity: 0.35;
-    scale: 0.6;
-    rotate: -8deg;
+    opacity: 0;
+    scale: 0.4;
+    rotate: -12deg;
   }
   60% {
     opacity: 1;
-    scale: 1.22;
-    rotate: 3deg;
+    scale: 1.35;
+    rotate: 14deg;
   }
   to {
     opacity: 1;
     scale: 1;
-    rotate: 0deg;
+    rotate: 8deg;
+  }
+}
+
+/* idle drift — translate only, so it never fights the stamp or the blaze */
+@keyframes mult-bob {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: 0 -0.2rem;
   }
 }
 
@@ -1209,6 +1290,26 @@ input {
   }
   to {
     scale: 1.09;
+  }
+}
+
+/* colour sweep across gradient-clipped text; 150% is exactly one full tile
+   of the 300% background, so the loop is seamless */
+@keyframes score-prism {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 150% 50%;
+  }
+}
+
+@keyframes capsule-surge {
+  from {
+    box-shadow: 0 0 16px color-mix(in srgb, var(--color-reward) 30%, transparent);
+  }
+  to {
+    box-shadow: 0 0 30px color-mix(in srgb, var(--color-danger) 45%, transparent);
   }
 }
 
