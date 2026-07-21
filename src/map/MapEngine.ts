@@ -488,9 +488,15 @@ export class MapEngine {
    * Whether a plain wheel scroll zooms the world. The menu hands the wheel
    * back to the page — scrolling there travels down to the site footer — while
    * a ctrl-wheel (trackpad pinch) always reads as deliberate zoom intent.
+   *
+   * Touch gets the same carve-out: on the menu a vertical swipe is the page's
+   * (touch-action: pan-y lets the browser scroll to the footer with native
+   * momentum, cancelling our pointer stream when it claims the gesture), while
+   * horizontal swipes still turn the world and taps still pick regions.
    */
   setWheelZoom(on: boolean): void {
     this.wheelZoomOn = on;
+    this.canvas.style.touchAction = on ? "none" : "pan-y";
   }
 
   /**

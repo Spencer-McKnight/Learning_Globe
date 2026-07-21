@@ -13,9 +13,10 @@ interface SiteFooterProps {
 /**
  * The page beneath the world. The whole app is a fixed, full-viewport stage;
  * this footer is the only element in normal document flow, pushed one viewport
- * down (theme.css). On the menu the engine releases the scroll wheel, so
- * scrolling dips below the horizon and the footer rises over the globe —
- * its curved top edge is the planet's limb seen from underneath.
+ * down (theme.css). On the menu the engine releases the scroll wheel and
+ * vertical touch swipes, so scrolling dips below the horizon and the footer
+ * rises over the globe — its curved top edge is the planet's limb seen from
+ * underneath.
  */
 export function SiteFooter(props: SiteFooterProps): JSX.Element {
   const year = new Date().getFullYear();

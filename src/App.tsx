@@ -277,8 +277,10 @@ export default function App({ account }: { account: Account }): JSX.Element {
     engineRef.current?.setCrosshair(keyboardNav && (screen === "game" || screen === "explore"));
   }, [keyboardNav, screen, engineEpoch]);
 
-  // On the menu the wheel belongs to the page: scrolling reveals the site
-  // footer below the horizon instead of zooming. Every other screen zooms.
+  // On the menu the wheel — and, on touch, a vertical swipe — belongs to the
+  // page: scrolling reveals the site footer below the horizon instead of
+  // zooming, while horizontal swipes still turn the world. Every other screen
+  // owns every gesture.
   useEffect(() => {
     engineRef.current?.setWheelZoom(screen !== "menu");
   }, [screen, engineEpoch]);

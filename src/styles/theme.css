@@ -244,9 +244,10 @@ input {
 
 /* The stage is fixed and full-viewport; the footer is the only element in
    normal document flow, pushed one viewport down. On the menu the engine
-   releases the scroll wheel (MapEngine.setWheelZoom), so the page scrolls and
-   the footer rises over the fixed stage. flow-root keeps that viewport-tall
-   margin from collapsing through .app onto <body>. */
+   releases the scroll wheel and vertical touch swipes (MapEngine.setWheelZoom
+   flips the canvas to touch-action: pan-y), so the page scrolls and the footer
+   rises over the fixed stage. flow-root keeps that viewport-tall margin from
+   collapsing through .app onto <body>. */
 .app {
   display: flow-root;
 }
