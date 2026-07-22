@@ -115,6 +115,8 @@ const REVEAL_MS = 3000;
  * a little, so play opens with the world arriving rather than sitting still.
  */
 const FRAME_MS = 900;
+/** Band-only re-frames (window resize, URL bar settling) glide, not pop. */
+const BAND_EASE_MS = 320;
 const PLAY_ZOOM = 1.2;
 /** Persistent glow while the player studies the revealed country. */
 const REVEAL_FLASH_MS = Number.POSITIVE_INFINITY;
@@ -308,16 +310,21 @@ export default function App({ account }: { account: Account }): JSX.Element {
    * Where the map is framed. On the menu it fits the band between the title and
    * Play; every other screen hands it the whole canvas. A change of framing
    * eases — that ease is half of the "pan in" when a round starts — while a
-   * resize within one framing lands immediately.
+   * band change within one framing glides briefly: it comes from a window
+   * resize or the mobile URL bar re-expanding at rest, and a short ease turns
+   * what would be a visible pop into a settle. Only the very first framing
+   * lands instantly, so boot doesn't open on an animation.
    */
   const framing = screen === "menu" && menuBand && !tutorialActive ? "menu" : "full";
   const lastFraming = useRef<string | null>(null);
   useEffect(() => {
     const e = engineRef.current;
     if (!e) return;
-    const changed = lastFraming.current !== null && lastFraming.current !== framing;
+    const first = lastFraming.current === null;
+    const changed = !first && lastFraming.current !== framing;
     lastFraming.current = framing;
-    e.setViewInsets(framing === "menu" && menuBand ? menuBand : {}, changed ? FRAME_MS : 0);
+    const dur = changed ? FRAME_MS : first ? 0 : BAND_EASE_MS;
+    e.setViewInsets(framing === "menu" && menuBand ? menuBand : {}, dur);
   }, [framing, menuBand, engineEpoch]);
 
   useEffect(() => {

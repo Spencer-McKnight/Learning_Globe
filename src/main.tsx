@@ -6,8 +6,11 @@ import "@fontsource/baloo-2/800.css";
 import "@fontsource/nunito/400.css";
 import "@fontsource/nunito/700.css";
 import "@fontsource/nunito/800.css";
+import { inject } from "@vercel/analytics";
 import "./styles/theme.css";
 import App from "./App";
+
+inject();
 import { GuidePage } from "./components/GuidePage";
 import { NotFoundPage } from "./components/NotFoundPage";
 import { PrivacyPage } from "./components/PrivacyPage";

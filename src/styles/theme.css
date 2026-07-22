@@ -171,12 +171,21 @@ input {
   height: 100%;
 }
 
+/* Sized to the *large* viewport, not the dynamic one: on mobile the URL bar
+   collapses while the page scrolls to the footer, and a canvas tracking that
+   (inset: 0 / height: 100%) would resize on every frame of the bar's
+   animation — each resize clears the drawing buffer (the world blinks out)
+   and refits the projection (the world shifts). Anchored to 100lvh nothing
+   about the stage changes while the bar animates; the sliver below the
+   dynamic viewport is simply offscreen. */
 .map-canvas {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
   z-index: var(--z-map);
   width: 100%;
-  height: 100%;
+  height: 100vh;
+  height: 100lvh;
   touch-action: none;
   display: block;
 }

@@ -242,6 +242,16 @@ export function IconEye(props: IconProps): JSX.Element {
   );
 }
 
+export function IconChart(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="14" width="4" height="6" rx="1" />
+      <rect x="10" y="9" width="4" height="11" rx="1" />
+      <rect x="17" y="4" width="4" height="16" rx="1" />
+    </Svg>
+  );
+}
+
 export function IconSpeaker(props: IconProps): JSX.Element {
   return (
     <Svg {...props}>

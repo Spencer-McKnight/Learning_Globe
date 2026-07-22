@@ -1,6 +1,7 @@
 import { STR } from "../content/strings";
 import { InfoBlock, InfoList, InfoPage } from "./InfoPage";
 import {
+  IconChart,
   IconCookie,
   IconDatabase,
   IconDoc,
@@ -52,6 +53,12 @@ export function PrivacyPage(): JSX.Element {
 
       <InfoBlock title={P.visible.title} tone="reward" icon={<IconLeaderboard />}>
         <p>{P.visible.body}</p>
+      </InfoBlock>
+
+      <InfoBlock title={P.analytics.title} tone="accent" icon={<IconChart />}>
+        <p>{P.analytics.body}</p>
+        <InfoList items={P.analytics.points} />
+        <p>{P.analytics.after}</p>
       </InfoBlock>
 
       <InfoBlock title={P.cookies.title} tone="reward" icon={<IconCookie />}>

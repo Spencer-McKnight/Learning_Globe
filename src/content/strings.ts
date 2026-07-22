@@ -387,12 +387,12 @@ export const STR = {
   privacyPage: {
     docTitle: "Privacy policy · learnthe.world",
     title: "Privacy policy",
-    effective: "Effective 21 July 2026",
+    effective: "Effective 22 July 2026",
     intro:
       "learnthe.world is a free geography game. You can play it fully without an account, and it collects the minimum it needs to run. This page explains what is stored, where it lives, and the choices you have.",
     pledge: {
       title: "We do not sell your data.",
-      body: "No ads, no trackers, no analytics scripts, no data brokers. Your progress exists for one purpose: the game.",
+      body: "No ads, no tracking cookies, no data brokers. We use a single, privacy-first analytics service that collects no personal information. Your progress exists for one purpose: the game.",
     },
     guest: {
       title: "Playing as a guest",
@@ -423,9 +423,21 @@ export const STR = {
       title: "What other players see",
       body: "Only what the high score board shows: your display name, score, correct answers and the date. The display name is up to you and can be changed at any time. Nothing else is public.",
     },
+    analytics: {
+      title: "Analytics",
+      body: "We use Vercel Analytics to understand how the site is used — which pages are visited, how long sessions last, and which countries and devices our players come from. This helps us improve the game for everyone.",
+      points: [
+        "Vercel Analytics does not use cookies and does not track individual users",
+        "No personal information is collected — not your IP address, not a device fingerprint",
+        "Analytics data is not linked to your game account or progress",
+        "Data is aggregated and cannot be used to identify you",
+      ],
+      after:
+        "Because Vercel Analytics is cookieless and collects no personal data, no consent banner is required under the GDPR, ePrivacy Directive or similar regulations.",
+    },
     cookies: {
       title: "Cookies and local storage",
-      body: "There are no advertising or analytics cookies. The site uses browser local storage for two things: your game progress, and for members the token that keeps you signed in.",
+      body: "There are no advertising or tracking cookies. The site uses browser local storage for two things: your game progress, and for members the token that keeps you signed in.",
     },
     rights: {
       title: "Your choices and rights",
