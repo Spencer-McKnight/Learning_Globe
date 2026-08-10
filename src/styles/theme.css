@@ -251,8 +251,9 @@ input {
   --footer-peek: 1.85rem;
 }
 
-/* Fixed to the viewport bottom. Collapsed: only the indented handle peeks.
-   Expanded: the panel drops up over the globe. No document scroll. */
+/* Fixed to the viewport bottom. Collapsed: the panel sits fully off-screen and
+   only the indented handle peeks above the fold. Expanded: the panel drops up
+   over the globe. No document scroll. */
 .site-footer {
   position: fixed;
   inset-inline: 0;
@@ -271,7 +272,7 @@ input {
   box-shadow:
     0 -10px 32px color-mix(in srgb, var(--color-accent) 7%, transparent),
     0 -30px 90px var(--color-scrim);
-  transform: translate3d(0, calc(100% - var(--footer-peek)), 0);
+  transform: translate3d(0, 100%, 0);
   transition: transform 0.38s var(--ease-tide);
   /* Keep collapsed chrome from eating globe taps outside the handle. */
   pointer-events: none;
@@ -282,7 +283,8 @@ input {
   pointer-events: auto;
 }
 
-/* Centered indent + arrow: the only hit target while collapsed. */
+/* Centered indent + arrow: the only hit target while collapsed. Sits fully
+   above the panel's top edge so a collapsed footer shows just this tab. */
 .site-footer-handle {
   pointer-events: auto;
   position: absolute;
@@ -292,21 +294,20 @@ input {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 3.25rem;
+  width: 3.1rem;
   height: var(--footer-peek);
-  padding: 0;
+  padding: 0 0 0.15rem;
   margin: 0;
-  transform: translate(-50%, -55%);
+  transform: translate(-50%, -100%);
   border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
-  border-radius: 999px 999px 0.85rem 0.85rem;
+  border-bottom: 0;
+  border-radius: 1.1rem 1.1rem 0 0;
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--color-accent) 8%, var(--color-bg)),
-    var(--color-bg) 70%
+    var(--color-bg)
   );
-  box-shadow:
-    0 -6px 18px color-mix(in srgb, var(--color-accent) 8%, transparent),
-    0 -2px 8px var(--color-scrim);
+  box-shadow: 0 -6px 18px color-mix(in srgb, var(--color-accent) 8%, transparent);
   color: var(--color-text-muted);
   cursor: pointer;
   transition:
@@ -321,16 +322,19 @@ input {
 }
 
 .site-footer-handle:active {
-  transform: translate(-50%, -55%) scale(0.96);
+  transform: translate(-50%, -100%) scale(0.96);
 }
 
 .site-footer.is-open .site-footer-handle {
-  /* Sit on the limb rather than floating above once the panel is up. */
-  transform: translate(-50%, -42%);
+  /* Nest into the limb once the panel is up. */
+  transform: translate(-50%, -55%);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+  border-radius: 1.1rem;
+  padding-bottom: 0;
 }
 
 .site-footer.is-open .site-footer-handle:active {
-  transform: translate(-50%, -42%) scale(0.96);
+  transform: translate(-50%, -55%) scale(0.96);
 }
 
 .site-footer-handle svg {
