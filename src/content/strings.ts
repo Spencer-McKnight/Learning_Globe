@@ -359,9 +359,11 @@ export const STR = {
     tutorial: "Tutorial",
   },
 
-  /** The site footer beneath the menu — scroll down on the home screen. */
+  /** The site footer on the menu — a drop-up drawer behind the pull-tab. */
   footer: {
     navLabel: "Site",
+    open: "Open site footer",
+    close: "Close site footer",
     mission: "Learn every country on Earth. Free, for everyone.",
     privacy: "Privacy policy",
     guide: "Usability guide",
@@ -485,6 +487,7 @@ export const STR = {
         "Pinch to zoom",
         "Tap to drop your pin",
         "Ocean taps are free; they never cost a try",
+        "On the menu, the arrow at the bottom opens the site footer",
       ],
     },
     mouse: {
@@ -493,7 +496,7 @@ export const STR = {
         "Drag to spin the world",
         "Scroll to zoom during play",
         "Click to drop your pin",
-        "On the menu, scrolling glides down to the site footer",
+        "On the menu, the arrow at the bottom opens the site footer",
       ],
     },
     keyboard: {

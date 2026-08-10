@@ -56,12 +56,6 @@ export function Menu(props: MenuProps): JSX.Element {
     const dock = dockRef.current;
     if (!head || !dock || !onBand) return;
     const measure = (): void => {
-      // While the page is scrolled toward the footer the mobile URL bar is
-      // animating and the dock is riding the shrinking dynamic viewport —
-      // re-framing the globe to that moving band is exactly the jitter we
-      // don't want. The band only means anything with the menu at rest at
-      // the top; the scroll listener below re-measures the moment it is.
-      if (window.scrollY > 1) return;
       // Layout boxes, not getBoundingClientRect: the dock arrives on a
       // tide-up transform, and a rect taken mid-flight sits 44px low — the
       // globe would be fitted to a band that shrinks when the animation
@@ -70,9 +64,8 @@ export function Menu(props: MenuProps): JSX.Element {
       // so these are viewport coordinates at rest.
       //
       // The bottom inset is measured against the canvas, not innerHeight:
-      // the stage is sized to the large viewport (100lvh, theme.css) so the
-      // URL bar can't jitter the world, which means innerHeight understates
-      // the canvas height by the bar whenever the bar is showing.
+      // the stage fills the layout viewport, so clientHeight matches the
+      // framed band the globe should live in.
       const stage = document.querySelector<HTMLElement>(".map-canvas");
       const stageH = stage?.clientHeight ?? window.innerHeight;
       onBand({
@@ -85,13 +78,9 @@ export function Menu(props: MenuProps): JSX.Element {
     ro.observe(head);
     ro.observe(dock);
     window.addEventListener("resize", measure);
-    // The map canvas is fixed to the viewport, so the band is viewport-relative
-    // too: re-measure if the page under it ever scrolls.
-    window.addEventListener("scroll", measure, { passive: true });
     return () => {
       ro.disconnect();
       window.removeEventListener("resize", measure);
-      window.removeEventListener("scroll", measure);
     };
   }, [onBand]);
 

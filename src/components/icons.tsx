@@ -132,6 +132,15 @@ export function IconShare(props: IconProps): JSX.Element {
   );
 }
 
+/** Up-pointing chevron; rotate 180° in CSS when a drawer is open. */
+export function IconChevron(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <polyline points="6 14.5 12 8.5 18 14.5" />
+    </Svg>
+  );
+}
+
 export function IconUser(props: IconProps): JSX.Element {
   return (
     <Svg {...props}>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { STR } from "../content/strings";
-import { IconShare } from "./icons";
+import { IconChevron, IconShare } from "./icons";
 
 /** The canonical address we hand to share sheets — the appName is the domain. */
 const SHARE_URL = `https://${STR.appName}`;
@@ -11,18 +11,18 @@ interface SiteFooterProps {
 }
 
 /**
- * The page beneath the world. The whole app is a fixed, full-viewport stage;
- * this footer is the only element in normal document flow, pushed one viewport
- * down (theme.css). On the menu the engine releases the scroll wheel and
- * vertical touch swipes, so scrolling dips below the horizon and the footer
- * rises over the globe — its curved top edge is the planet's limb seen from
- * underneath.
+ * Site chrome on the menu, pinned to the viewport bottom. Collapsed it shows
+ * only a small indented pull-tab with an arrow; expanded it drops up over the
+ * globe. No page scroll — the stage stays one full view tall, which keeps the
+ * mobile URL bar from jittering the world.
  */
 export function SiteFooter(props: SiteFooterProps): JSX.Element {
   const year = new Date().getFullYear();
+  const [open, setOpen] = useState(false);
   /** Clipboard path only: flips the button into its "Link copied!" beat. */
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<number | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(
     () => () => {
@@ -30,6 +30,24 @@ export function SiteFooter(props: SiteFooterProps): JSX.Element {
     },
     []
   );
+
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    // React 18's DOM typings omit `inert`; set it imperatively so collapsed
+    // links/buttons drop out of tab order and assistive tech.
+    if (open) el.removeAttribute("inert");
+    else el.setAttribute("inert", "");
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
 
   /**
    * The share featureset, smallest that feels native everywhere: the OS share
@@ -57,8 +75,19 @@ export function SiteFooter(props: SiteFooterProps): JSX.Element {
   };
 
   return (
-    <footer className="site-footer">
-      <div className="site-footer-inner">
+    <footer className={`site-footer${open ? " is-open" : ""}`}>
+      <button
+        type="button"
+        className="site-footer-handle"
+        aria-expanded={open}
+        aria-controls="site-footer-panel"
+        aria-label={open ? STR.footer.close : STR.footer.open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <IconChevron size={18} />
+      </button>
+
+      <div className="site-footer-inner" id="site-footer-panel" ref={panelRef} aria-hidden={!open}>
         {/* The hero wordmark is fixed just above this page — the footer signs
             with the domain form instead of repeating it. */}
         <div className="site-footer-brand">

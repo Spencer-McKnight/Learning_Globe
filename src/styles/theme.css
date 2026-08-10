@@ -81,7 +81,7 @@
   --z-map: 0;
   --z-map-label: 1;
   --z-ui: 10;
-  --z-footer: 20; /* rises over the menu chrome as the page scrolls */
+  --z-footer: 20; /* drop-up drawer above menu chrome, below sheets */
   --z-sheet-backdrop: 100;
   --z-sheet: 101;
 
@@ -171,21 +171,15 @@ input {
   height: 100%;
 }
 
-/* Sized to the *large* viewport, not the dynamic one: on mobile the URL bar
-   collapses while the page scrolls to the footer, and a canvas tracking that
-   (inset: 0 / height: 100%) would resize on every frame of the bar's
-   animation — each resize clears the drawing buffer (the world blinks out)
-   and refits the projection (the world shifts). Anchored to 100lvh nothing
-   about the stage changes while the bar animates; the sliver below the
-   dynamic viewport is simply offscreen. */
+/* Full-viewport stage. The menu no longer scrolls to a footer, so the canvas
+   can track the layout box (html/body are height: 100%) without URL-bar
+   resize jitter from page scroll. */
 .map-canvas {
   position: fixed;
-  top: 0;
-  left: 0;
+  inset: 0;
   z-index: var(--z-map);
   width: 100%;
-  height: 100vh;
-  height: 100lvh;
+  height: 100%;
   touch-action: none;
   display: block;
 }
@@ -249,23 +243,21 @@ input {
   pointer-events: auto;
 }
 
-/* ---------- site footer — the page beneath the world (menu only) ---------- */
+/* ---------- site footer — drop-up drawer on the menu ---------- */
 
-/* The stage is fixed and full-viewport; the footer is the only element in
-   normal document flow, pushed one viewport down. On the menu the engine
-   releases the scroll wheel and vertical touch swipes (MapEngine.setWheelZoom
-   flips the canvas to touch-action: pan-y), so the page scrolls and the footer
-   rises over the fixed stage. flow-root keeps that viewport-tall margin from
-   collapsing through .app onto <body>. */
-.app {
-  display: flow-root;
+/* Peek height of the collapsed pull-tab (indent + arrow). Menu bottom padding
+   matches so Play/Explore sit clear of it. */
+:root {
+  --footer-peek: 1.85rem;
 }
 
+/* Fixed to the viewport bottom. Collapsed: only the indented handle peeks.
+   Expanded: the panel drops up over the globe. No document scroll. */
 .site-footer {
-  position: relative;
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
   z-index: var(--z-footer);
-  margin-top: 100vh;
-  margin-top: 100dvh;
   /* The planet's limb seen from underneath: a shallow curved horizon carrying
      a thin line of atmosphere light. */
   border-top-left-radius: 50% 2.75rem;
@@ -279,6 +271,75 @@ input {
   box-shadow:
     0 -10px 32px color-mix(in srgb, var(--color-accent) 7%, transparent),
     0 -30px 90px var(--color-scrim);
+  transform: translate3d(0, calc(100% - var(--footer-peek)), 0);
+  transition: transform 0.38s var(--ease-tide);
+  /* Keep collapsed chrome from eating globe taps outside the handle. */
+  pointer-events: none;
+}
+
+.site-footer.is-open {
+  transform: translate3d(0, 0, 0);
+  pointer-events: auto;
+}
+
+/* Centered indent + arrow: the only hit target while collapsed. */
+.site-footer-handle {
+  pointer-events: auto;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.25rem;
+  height: var(--footer-peek);
+  padding: 0;
+  margin: 0;
+  transform: translate(-50%, -55%);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+  border-radius: 999px 999px 0.85rem 0.85rem;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-accent) 8%, var(--color-bg)),
+    var(--color-bg) 70%
+  );
+  box-shadow:
+    0 -6px 18px color-mix(in srgb, var(--color-accent) 8%, transparent),
+    0 -2px 8px var(--color-scrim);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    color 0.18s,
+    border-color 0.18s,
+    transform 0.38s var(--ease-tide);
+}
+
+.site-footer-handle:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.site-footer-handle:active {
+  transform: translate(-50%, -55%) scale(0.96);
+}
+
+.site-footer.is-open .site-footer-handle {
+  /* Sit on the limb rather than floating above once the panel is up. */
+  transform: translate(-50%, -42%);
+}
+
+.site-footer.is-open .site-footer-handle:active {
+  transform: translate(-50%, -42%) scale(0.96);
+}
+
+.site-footer-handle svg {
+  display: block;
+  transition: transform 0.38s var(--ease-tide);
+}
+
+.site-footer.is-open .site-footer-handle svg {
+  transform: rotate(180deg);
 }
 
 .site-footer-inner {
@@ -290,7 +351,16 @@ input {
   text-align: center;
   gap: var(--sp-5);
   padding: var(--sp-6) var(--sp-4);
+  padding-top: calc(var(--sp-5) + 0.35rem);
   padding-bottom: max(var(--sp-5), env(safe-area-inset-bottom));
+  /* Hide panel content from hit-testing / focus while collapsed. */
+  visibility: hidden;
+  transition: visibility 0s linear 0.38s;
+}
+
+.site-footer.is-open .site-footer-inner {
+  visibility: visible;
+  transition-delay: 0s;
 }
 
 .site-footer-brand {
@@ -494,7 +564,11 @@ input {
   justify-content: space-between;
   padding: var(--sp-4);
   padding-top: max(var(--sp-5), env(safe-area-inset-top));
-  padding-bottom: max(var(--sp-3), env(safe-area-inset-bottom));
+  /* Clear the collapsed footer pull-tab so Play/Explore aren't covered. */
+  padding-bottom: max(
+    calc(var(--sp-3) + var(--footer-peek)),
+    calc(env(safe-area-inset-bottom) + var(--footer-peek))
+  );
 }
 
 /* one centered column on wide screens; full-bleed on phones. The rails are

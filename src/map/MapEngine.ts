@@ -485,18 +485,15 @@ export class MapEngine {
   }
 
   /**
-   * Whether a plain wheel scroll zooms the world. The menu hands the wheel
-   * back to the page — scrolling there travels down to the site footer — while
-   * a ctrl-wheel (trackpad pinch) always reads as deliberate zoom intent.
-   *
-   * Touch gets the same carve-out: on the menu a vertical swipe is the page's
-   * (touch-action: pan-y lets the browser scroll to the footer with native
-   * momentum, cancelling our pointer stream when it claims the gesture), while
-   * horizontal swipes still turn the world and taps still pick regions.
+   * Whether a plain wheel scroll zooms the world. Off on the menu so accidental
+   * trackpad motion doesn't zoom while you're picking a region; a ctrl-wheel
+   * (trackpad pinch) always reads as deliberate zoom intent. Touch stays on
+   * touch-action: none either way — the site footer is a fixed drop-up, not a
+   * page-scroll reveal.
    */
   setWheelZoom(on: boolean): void {
     this.wheelZoomOn = on;
-    this.canvas.style.touchAction = on ? "none" : "pan-y";
+    this.canvas.style.touchAction = "none";
   }
 
   /**
@@ -1139,8 +1136,12 @@ export class MapEngine {
   };
 
   private onWheel = (e: WheelEvent): void => {
-    // Menu mode: don't touch the event — the browser scrolls the page instead.
-    if (!this.wheelZoomOn && !e.ctrlKey) return;
+    // Menu mode: swallow plain wheel so the page can't scroll and the globe
+    // doesn't zoom — pinch (ctrl-wheel) still zooms.
+    if (!this.wheelZoomOn && !e.ctrlKey) {
+      e.preventDefault();
+      return;
+    }
     e.preventDefault();
     // Direct wheel input cancels eased keyboard zoom so they don't fight.
     this.nav.clearZoom();

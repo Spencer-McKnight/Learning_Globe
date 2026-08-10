@@ -279,10 +279,8 @@ export default function App({ account }: { account: Account }): JSX.Element {
     engineRef.current?.setCrosshair(keyboardNav && (screen === "game" || screen === "explore"));
   }, [keyboardNav, screen, engineEpoch]);
 
-  // On the menu the wheel — and, on touch, a vertical swipe — belongs to the
-  // page: scrolling reveals the site footer below the horizon instead of
-  // zooming, while horizontal swipes still turn the world. Every other screen
-  // owns every gesture.
+  // On the menu the wheel does not zoom — the home screen is for spinning and
+  // picking a region. Every other screen owns every gesture, including zoom.
   useEffect(() => {
     engineRef.current?.setWheelZoom(screen !== "menu");
   }, [screen, engineEpoch]);
@@ -480,45 +478,15 @@ export default function App({ account }: { account: Account }): JSX.Element {
     if (region !== "World") engineRef.current?.flyTo(REGION_FOCUS[region], { dur: 1100 });
   };
 
-  /**
-   * The menu may be scrolled down to the site footer; playing resumes at the
-   * full-height stage. Ride a smooth scroll back to the top first so the round
-   * doesn't open with the footer covering the world, then hand over.
-   */
-  const settleScroll = (then: () => void): void => {
-    if (window.scrollY <= 1) {
-      then();
-      return;
-    }
-    if (reduceMotion) {
-      window.scrollTo(0, 0);
-      then();
-      return;
-    }
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    const t0 = performance.now();
-    const tick = (): void => {
-      // Settled, or bail out if the browser never finishes the glide.
-      if (window.scrollY <= 1 || performance.now() - t0 > 800) {
-        then();
-        return;
-      }
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  };
-
   const onPlay = (): void => {
     sfx.unlockAudio();
     sfx.sfxTap();
-    settleScroll(() => {
-      if (!tutorialSeen()) {
-        pendingPlay.current = true;
-        setTutorialActive(true);
-        return;
-      }
-      beginRun();
-    });
+    if (!tutorialSeen()) {
+      pendingPlay.current = true;
+      setTutorialActive(true);
+      return;
+    }
+    beginRun();
   };
 
   const onTutorialDone = (): void => {
@@ -975,10 +943,8 @@ export default function App({ account }: { account: Account }): JSX.Element {
           onPlay={onPlay}
           onExplore={() => {
             sfx.unlockAudio();
-            settleScroll(() => {
-              setScreen("explore");
-              setAnnounce(STR.explore.hint);
-            });
+            setScreen("explore");
+            setAnnounce(STR.explore.hint);
           }}
           onPassport={() => setOverlay("passport")}
           onLeaderboard={() => setOverlay("leaderboard")}
@@ -988,8 +954,6 @@ export default function App({ account }: { account: Account }): JSX.Element {
         />
       )}
 
-      {/* Only the menu is a scrollable page; in play the stage owns the full
-          height and there is nothing below the world. */}
       {screen === "menu" && !tutorialActive && <SiteFooter onSettings={openSettings} />}
 
       {tutorialActive && (
